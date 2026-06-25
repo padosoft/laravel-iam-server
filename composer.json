@@ -1,0 +1,44 @@
+{
+    "name": "padosoft/laravel-iam-server",
+    "description": "Server Laravel IAM: identity, organizations, Application Registry + manifest, PDP (RBAC+ABAC+ReBAC), OAuth (league/oauth2-server) + OIDC layer, audit tamper-evident, governance/IGA, Admin API + panel.",
+    "type": "library",
+    "license": "MIT",
+    "require": {
+        "php": "^8.3",
+        "padosoft/laravel-iam-contracts": "*",
+        "spatie/laravel-package-tools": "^1.16",
+        "league/oauth2-server": "^9.0",
+        "lcobucci/jwt": "^5.0",
+        "laravel/socialite": "^5.0",
+        "laravel/fortify": "^1.0",
+        "aws/aws-sdk-php": "^3.0"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^9.0|^10.0",
+        "pestphp/pest": "^3.0"
+    },
+    "suggest": {
+        "laravel/passkeys": "Native WebAuthn/passkey assurance (AAL2)",
+        "laravel/ai": "AI module — via padosoft/laravel-iam-ai",
+        "laravel/mcp": "MCP server — via padosoft/laravel-iam-mcp",
+        "padosoft/laravel-iam-rebel": "Assurance avanzata (step-up/SCA/bot/recovery)",
+        "directorytree/ldaprecord-laravel": "LDAP/AD — via padosoft/laravel-iam-directory"
+    },
+    "autoload": {
+        "psr-4": {
+            "Padosoft\\Iam\\": "src/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Padosoft\\Iam\\IamServiceProvider"
+            ]
+        },
+        "branch-alias": {
+            "dev-main": "0.1-dev"
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}

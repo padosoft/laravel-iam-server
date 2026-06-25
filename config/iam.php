@@ -1,0 +1,90 @@
+<?php
+
+declare(strict_types=1);
+
+/*
+ * Configurazione di Laravel IAM Server.
+ * I valori sono Draft v1 e si arricchiscono milestone per milestone (vedi laravel-iam-docs/08 §8).
+ */
+
+return [
+
+    // M5 — Identity & Session (doc 10)
+    'authentication' => [
+        'hashing' => 'argon2id',
+        'password_policy' => [
+            'min_length' => 12,
+            'breached_check' => true, // have-i-been-pwned k-anonymity
+            'history' => 5,
+        ],
+        'lockout' => ['max_attempts' => 5, 'decay_seconds' => 900, 'step_up_after' => 3],
+        'passkeys' => ['enabled' => true, 'rp_name' => env('IAM_RP_NAME', 'Laravel IAM')],
+        'session' => [
+            'idle_timeout' => 1800,       // 30m
+            'absolute_timeout' => 43200,  // 12h (mai esteso)
+            'step_up_window' => 300,      // 5m
+            'concurrent_limit' => null,   // null = off
+        ],
+    ],
+
+    // M4 — OAuth/OIDC (doc 13)
+    'tokens' => [
+        'access_ttl' => 900,
+        'refresh_ttl' => 1209600,
+        'signing_alg' => 'ES256', // RS256 | ES256 | EdDSA
+        'introspection_for_critical' => true,
+    ],
+
+    // M3 — Crypto/KMS (doc 11)
+    'crypto' => [
+        'driver' => env('IAM_KMS_DRIVER', 'local'), // local | aws | vault(v2) | azure(v2) | gcp(v2)
+        'keys_path' => storage_path('keys'),
+        'aws' => ['kms_key_id' => env('IAM_AWS_KMS_KEY_ID'), 'region' => env('AWS_DEFAULT_REGION')],
+    ],
+
+    // M7 — Audit (doc 12)
+    'audit' => [
+        'stream' => 'organization', // organization | global
+        'ip_mode' => env('IAM_AUDIT_IP_MODE', 'hash'), // full | hash | none
+        'ip_pepper' => env('IAM_AUDIT_IP_PEPPER'),
+        'ua_mode' => env('IAM_AUDIT_UA_MODE', 'hash'),
+        'export' => ['format' => 'ocsf', 'sink' => env('IAM_AUDIT_SINK')], // ELK/SIEM
+    ],
+
+    // M8 — Governance / IGA (doc 14)
+    'governance' => [
+        'features' => [
+            'access_review' => ['default' => 'on', 'permission' => 'iam:access_review.manage'],
+            'access_request' => ['default' => 'off', 'permission' => 'iam:access_request.use'],
+            'pim' => ['default' => 'off', 'permission' => 'iam:pim.activate'],
+            'sod' => ['default' => 'detect'],
+        ],
+        'toxic_combinations' => [
+            // ['key' => 'self_approval', 'permissions' => ['iam:policies.manage', 'iam:policies.approve'], 'severity' => 'high'],
+        ],
+    ],
+
+    // M11 — AI (doc 15) — advisory-only, off di default, sovrano
+    'ai' => [
+        'enabled' => env('IAM_AI_ENABLED', false),
+        'provider' => env('IAM_AI_PROVIDER', 'regolo'), // regolo (UE) | ollama (on-prem) | azure | bedrock — MAI openai default
+        'model' => env('IAM_AI_MODEL'),
+        'redaction' => true,
+        'store_prompts' => false,
+        'store_outputs' => true,
+        'max_context_events' => 500,
+    ],
+
+    // M? — MCP (doc 13/15) — v2
+    'mcp' => [
+        'enabled' => env('IAM_MCP_ENABLED', false),
+        'require_oauth' => true,
+        'dry_run_mutations_by_default' => true,
+    ],
+
+    // Integrazioni opzionali (auto-detect via class_exists)
+    'integrations' => [
+        'rebel' => ['enabled' => env('IAM_REBEL_ENABLED', 'auto')],
+        'invitations' => ['enabled' => env('IAM_INVITATIONS_ENABLED', 'auto')],
+    ],
+];
