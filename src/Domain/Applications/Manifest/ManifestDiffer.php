@@ -34,7 +34,7 @@ final class ManifestDiffer
         $requiresApproval = $breaking
             || $redirects['added'] !== [] || $redirects['removed'] !== []
             || $clientType
-            || $this->touchesHighRiskPermission($permissions, $next)
+            || $this->touchesHighRiskPermission($permissions, $current, $next)
             || $this->roleGrantsCriticalPermission($next);
 
         return [
@@ -72,7 +72,8 @@ final class ManifestDiffer
         foreach ($new as $key => $item) {
             if (!array_key_exists($key, $old)) {
                 $added[] = $key;
-            } elseif ($old[$key] !== $item) {
+            } elseif ($this->canonical($old[$key]) !== $this->canonical($item)) {
+                // Confronto canonico (ordine delle chiavi irrilevante): evita falsi "changed".
                 $changed[] = $key;
             }
         }
@@ -141,20 +142,50 @@ final class ManifestDiffer
     }
 
     /**
+     * Un cambio che TOCCA un permesso high/critical richiede approval. Per i permessi `changed`
+     * si guarda il rischio sia VECCHIO sia NUOVO: così un downgrade critical→low (decisione di
+     * sicurezza) non si auto-approva.
+     *
      * @param  array{added: list<string>, changed: list<string>, removed: list<string>}  $permissions
+     * @param  array<string, mixed>  $current
      * @param  array<string, mixed>  $next
      */
-    private function touchesHighRiskPermission(array $permissions, array $next): bool
+    private function touchesHighRiskPermission(array $permissions, array $current, array $next): bool
     {
-        $byKey = $this->items($next, 'permissions');
-        foreach ([...$permissions['added'], ...$permissions['changed']] as $key) {
-            $risk = $byKey[$key]['risk'] ?? 'low';
-            if (in_array($risk, self::HIGH_RISK, true)) {
+        $newByKey = $this->items($next, 'permissions');
+        foreach ($permissions['added'] as $key) {
+            if (in_array($newByKey[$key]['risk'] ?? 'low', self::HIGH_RISK, true)) {
+                return true;
+            }
+        }
+
+        $oldByKey = $this->items($current, 'permissions');
+        foreach ($permissions['changed'] as $key) {
+            $oldRisk = $oldByKey[$key]['risk'] ?? 'low';
+            $newRisk = $newByKey[$key]['risk'] ?? 'low';
+            if (in_array($oldRisk, self::HIGH_RISK, true) || in_array($newRisk, self::HIGH_RISK, true)) {
                 return true;
             }
         }
 
         return false;
+    }
+
+    /**
+     * Forma canonica per il confronto: chiavi ordinate ricorsivamente.
+     */
+    private function canonical(mixed $value): mixed
+    {
+        if (!is_array($value)) {
+            return $value;
+        }
+        $out = [];
+        foreach ($value as $k => $v) {
+            $out[$k] = $this->canonical($v);
+        }
+        ksort($out);
+
+        return $out;
     }
 
     /**

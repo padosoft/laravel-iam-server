@@ -61,7 +61,9 @@ final class ManifestRegistry
      */
     public function diff(Manifest $manifest): array
     {
-        if ($manifest->status === 'rejected') {
+        // Si diffa SOLO un manifest già validato (la validazione schema deve essere passata):
+        // niente avanzamento ad approved/pending senza validazione.
+        if ($manifest->status !== 'validated') {
             return [];
         }
 
