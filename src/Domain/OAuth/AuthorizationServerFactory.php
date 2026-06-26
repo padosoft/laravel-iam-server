@@ -10,6 +10,7 @@ use League\OAuth2\Server\CryptKey;
 use League\OAuth2\Server\Grant\AuthCodeGrant;
 use League\OAuth2\Server\Grant\ClientCredentialsGrant;
 use Padosoft\Iam\Contracts\Crypto\TokenSigner;
+use Padosoft\Iam\Domain\OAuth\Grants\IamRefreshTokenGrant;
 use Padosoft\Iam\Domain\OAuth\Repositories\AccessTokenRepository;
 use Padosoft\Iam\Domain\OAuth\Repositories\AuthCodeRepository;
 use Padosoft\Iam\Domain\OAuth\Repositories\ClientRepository;
@@ -53,10 +54,16 @@ final class AuthorizationServerFactory
         }
         if (($grants['authorization_code'] ?? false) === true) {
             // PKCE resta obbligatorio per i client public (default league); il refresh token
-            // viene emesso nello scambio del code (il grant refresh_token è abilitato in M4b.3).
+            // viene emesso nello scambio del code (consumato dal grant refresh_token).
             $authCode = new AuthCodeGrant($this->authCodes, $this->refreshTokens, $this->authCodeTtl());
             $authCode->setRefreshTokenTTL($this->refreshTtl());
             $server->enableGrantType($authCode, $this->accessTtl());
+        }
+        if (($grants['refresh_token'] ?? false) === true) {
+            // Rotation (default league) + replay detection a livello di catena (RFC 9700).
+            $refresh = new IamRefreshTokenGrant($this->refreshTokens);
+            $refresh->setRefreshTokenTTL($this->refreshTtl());
+            $server->enableGrantType($refresh, $this->accessTtl());
         }
 
         return $server;

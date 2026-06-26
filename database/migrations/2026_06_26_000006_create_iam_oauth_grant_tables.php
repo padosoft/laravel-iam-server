@@ -31,11 +31,13 @@ return new class extends Migration
         Schema::create('iam_oauth_refresh_tokens', function (Blueprint $t): void {
             $t->ulid('id')->primary();
             $t->string('refresh_token_id')->unique();    // identificativo league del refresh token
+            $t->string('chain_id');                      // famiglia di rotazione (replay → revoca catena, RFC 9700)
             $t->string('access_token_jti');              // access token associato (revoca a cascata)
             $t->boolean('revoked')->default(false);
             $t->timestamp('expires_at')->nullable();
             $t->timestamps();
 
+            $t->index('chain_id');
             $t->index('access_token_jti');
         });
     }

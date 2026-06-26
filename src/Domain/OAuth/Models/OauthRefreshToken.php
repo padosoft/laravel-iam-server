@@ -14,6 +14,7 @@ use Illuminate\Support\Carbon;
  *
  * @property string $id
  * @property string $refresh_token_id
+ * @property string $chain_id
  * @property string $access_token_jti
  * @property bool $revoked
  * @property Carbon|null $expires_at
@@ -25,7 +26,7 @@ final class OauthRefreshToken extends Model
     protected $table = 'iam_oauth_refresh_tokens';
 
     /** @var list<string> */
-    protected $fillable = ['refresh_token_id', 'access_token_jti', 'revoked', 'expires_at'];
+    protected $fillable = ['refresh_token_id', 'chain_id', 'access_token_jti', 'revoked', 'expires_at'];
 
     /** @var array<string, mixed> */
     protected $attributes = ['revoked' => false];
