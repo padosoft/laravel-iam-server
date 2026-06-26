@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Padosoft\Iam\Domain\Applications\Manifest;
 
+use Illuminate\Support\Facades\DB;
 use Padosoft\Iam\Domain\Applications\Models\Application;
 use Padosoft\Iam\Domain\Applications\Models\Manifest;
 
@@ -110,28 +111,42 @@ final class ManifestRegistry
     /**
      * Rollback: ri-applica la PRECEDENTE versione applicata dell'app (doc 01 §10.1). La versione
      * corrente passa a rolled_back. Ritorna null se non c'è una versione precedente a cui tornare.
+     *
+     * Operazione sensibile (può ri-introdurre uno stato vecchio): se la versione target richiedeva
+     * approval serve `$approved=true` esplicito. Tutto in UNA transazione, con lock sulla riga app
+     * e re-read di `current_manifest_id` SOTTO il lock: due rollback concorrenti non possono fare
+     * doppio apply (TOCTOU) e un fallimento dell'apply non lascia il registry incoerente.
+     *
+     * @throws \RuntimeException se la versione target richiede approvazione e $approved è false
      */
-    public function rollback(string $appKey): ?Application
+    public function rollback(string $appKey, bool $approved = false): ?Application
     {
-        $app = Application::query()->where('key', $appKey)->first();
-        if ($app === null || !is_string($app->current_manifest_id)) {
-            return null;
-        }
+        return DB::transaction(function () use ($appKey, $approved): ?Application {
+            $app = Application::query()->where('key', $appKey)->lockForUpdate()->first();
+            if ($app === null || !is_string($app->current_manifest_id)) {
+                return null;
+            }
 
-        $previous = Manifest::query()
-            ->where('application_key', $appKey)
-            ->where('status', 'applied')
-            ->whereKeyNot($app->current_manifest_id)
-            ->orderByDesc('version')
-            ->first();
-        if ($previous === null) {
-            return null;
-        }
+            $previous = Manifest::query()
+                ->where('application_key', $appKey)
+                ->where('status', 'applied')
+                ->whereKeyNot($app->current_manifest_id)
+                ->orderByDesc('version')
+                ->lockForUpdate()
+                ->first();
+            if ($previous === null) {
+                return null;
+            }
 
-        Manifest::query()->whereKey($app->current_manifest_id)->update(['status' => 'rolled_back']);
-        $previous->forceFill(['status' => 'approved'])->save();
+            if ((bool) $previous->requires_approval && !$approved) {
+                throw new \RuntimeException("Il rollback di \"{$appKey}\" richiede approvazione esplicita: la versione target conteneva cambi sensibili.");
+            }
 
-        return $this->applier->apply($previous);
+            Manifest::query()->whereKey($app->current_manifest_id)->update(['status' => 'rolled_back']);
+            $previous->forceFill(['status' => 'approved'])->save();
+
+            return $this->applier->apply($previous);
+        });
     }
 
     /**

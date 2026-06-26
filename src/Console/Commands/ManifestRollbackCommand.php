@@ -12,7 +12,7 @@ use Padosoft\Iam\Domain\Applications\Manifest\ManifestRegistry;
  */
 final class ManifestRollbackCommand extends Command
 {
-    protected $signature = 'iam:manifest:rollback {app : key dell\'applicazione}';
+    protected $signature = 'iam:manifest:rollback {app : key dell\'applicazione} {--approve : approva esplicitamente un rollback verso una versione che conteneva cambi sensibili}';
 
     protected $description = 'Effettua il rollback alla precedente versione di manifest applicata.';
 
@@ -25,7 +25,14 @@ final class ManifestRollbackCommand extends Command
             return self::FAILURE;
         }
 
-        $application = $registry->rollback($appKey);
+        try {
+            $application = $registry->rollback($appKey, (bool) $this->option('approve'));
+        } catch (\RuntimeException $e) {
+            $this->error($e->getMessage());
+
+            return self::FAILURE;
+        }
+
         if ($application === null) {
             $this->error("Nessuna versione precedente applicata per \"{$appKey}\".");
 
