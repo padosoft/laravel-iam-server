@@ -41,6 +41,7 @@ return [
     // M3 — Crypto/KMS (doc 11)
     'crypto' => [
         'driver' => env('IAM_KMS_DRIVER', 'local'), // local | aws | vault(v2) | azure(v2) | gcp(v2)
+        'kek' => env('IAM_KEK'), // KEK base64 (32 byte). Vuoto in dev → derivata da APP_KEY.
         'keys_path' => storage_path('keys'),
         'aws' => ['kms_key_id' => env('IAM_AWS_KMS_KEY_ID'), 'region' => env('AWS_DEFAULT_REGION')],
     ],
