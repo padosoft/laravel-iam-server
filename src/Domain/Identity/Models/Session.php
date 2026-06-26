@@ -22,6 +22,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $step_up_at
  * @property Carbon|null $revoked_at
  * @property string|null $revoked_reason
+ * @property Carbon|null $created_at
  */
 final class Session extends Model
 {

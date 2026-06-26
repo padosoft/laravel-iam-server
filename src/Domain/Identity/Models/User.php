@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Padosoft\Iam\Domain\Identity\Models;
 
+use Illuminate\Auth\Authenticatable as AuthenticatableTrait;
+use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -14,14 +16,19 @@ use Padosoft\Iam\Domain\Organizations\Models\Membership;
 /**
  * Utente IAM (doc 10 §7). Identità globale; appartiene a N org via membership.
  *
+ * È Authenticatable per integrarsi con il guard/Fortify e con il flusso OAuth /authorize.
+ * Le credenziali (password/passkey/totp) NON vivono qui ma in iam_identities/Fortify: una
+ * UserProvider dedicata (M5.4/deploy) le risolve. `getAuthIdentifier()` ritorna l'ULID.
+ *
  * @property string $id
  * @property string $status
  * @property string|null $email
  * @property string|null $name
  * @property Carbon|null $email_verified_at
  */
-final class User extends Model
+final class User extends Model implements Authenticatable
 {
+    use AuthenticatableTrait;
     use HasUlids;
 
     protected $table = 'iam_users';

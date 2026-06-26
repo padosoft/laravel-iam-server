@@ -37,6 +37,7 @@ final class AuthCodeRepository implements AuthCodeRepositoryInterface
             $authCodeEntity->getScopes(),
         );
 
+        $amr = $this->oidc->amr();
         OauthAuthCode::query()->create([
             'auth_code_id' => $id,
             'client_id' => $authCodeEntity->getClient()->getIdentifier(),
@@ -44,6 +45,9 @@ final class AuthCodeRepository implements AuthCodeRepositoryInterface
             'scopes' => $scopes,
             'nonce' => $this->oidc->nonce(),
             'auth_time' => $this->oidc->authTime(),
+            'sid' => $this->oidc->sid(),
+            'acr' => $this->oidc->acr(),
+            'amr' => $amr !== [] ? $amr : null,
             'expires_at' => $authCodeEntity->getExpiryDateTime(),
         ]);
     }

@@ -52,6 +52,19 @@ final class OidcBearerTokenResponse extends BearerTokenResponse
         if ($nonce !== null) {
             $claims['nonce'] = $nonce;
         }
+        // acr/amr: livello di assurance (AAL) e metodi di autenticazione della sessione (doc 10 §4).
+        $acr = $this->context->acr();
+        if ($acr !== null) {
+            $claims['acr'] = $acr;
+        }
+        $amr = $this->context->amr();
+        if ($amr !== []) {
+            $claims['amr'] = $amr;
+        }
+        $sid = $this->context->sid();
+        if ($sid !== null) {
+            $claims['sid'] = $sid;
+        }
 
         return ['id_token' => $this->signer->issue($claims, $this->idTokenTtl)];
     }

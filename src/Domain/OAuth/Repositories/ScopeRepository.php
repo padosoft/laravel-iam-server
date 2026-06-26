@@ -46,11 +46,13 @@ final class ScopeRepository implements ScopeRepositoryInterface
         ?string $userIdentifier = null,
         ?string $authCodeId = null,
     ): array {
-        // Allo scambio dell'auth code: ripristina nonce/auth_time dell'OIDC per l'id_token.
+        // Allo scambio dell'auth code: ripristina il contesto OIDC (nonce/auth_time) e la sessione
+        // (sid/acr/amr) dal code, per i claim dell'access token (sid) e dell'id_token (acr/amr).
         if ($authCodeId !== null && $authCodeId !== '') {
             $code = OauthAuthCode::query()->where('auth_code_id', $authCodeId)->first();
             if ($code !== null) {
                 $this->oidc->set($code->nonce, $code->auth_time?->toDateTimeImmutable());
+                $this->oidc->setSession($code->sid, $code->acr, $code->amr ?? []);
             }
         }
 

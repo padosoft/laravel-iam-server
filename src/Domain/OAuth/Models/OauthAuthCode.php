@@ -18,6 +18,9 @@ use Illuminate\Support\Carbon;
  * @property list<string>|null $scopes
  * @property string|null $nonce
  * @property Carbon|null $auth_time
+ * @property string|null $sid
+ * @property string|null $acr
+ * @property list<string>|null $amr
  * @property bool $revoked
  * @property Carbon|null $expires_at
  */
@@ -28,7 +31,7 @@ final class OauthAuthCode extends Model
     protected $table = 'iam_oauth_auth_codes';
 
     /** @var list<string> */
-    protected $fillable = ['auth_code_id', 'client_id', 'user_id', 'scopes', 'nonce', 'auth_time', 'revoked', 'expires_at'];
+    protected $fillable = ['auth_code_id', 'client_id', 'user_id', 'scopes', 'nonce', 'auth_time', 'sid', 'acr', 'amr', 'revoked', 'expires_at'];
 
     /** @var array<string, mixed> */
     protected $attributes = ['revoked' => false];
@@ -36,6 +39,7 @@ final class OauthAuthCode extends Model
     protected $casts = [
         'scopes' => 'array',
         'auth_time' => 'datetime',
+        'amr' => 'array',
         'revoked' => 'boolean',
         'expires_at' => 'datetime',
     ];

@@ -7,6 +7,8 @@ namespace Padosoft\Iam\Http\Controllers\OAuth;
 use Illuminate\Http\Request;
 use League\OAuth2\Server\AuthorizationServer;
 use League\OAuth2\Server\Exception\OAuthServerException;
+use Padosoft\Iam\Contracts\Identity\SessionRegistry;
+use Padosoft\Iam\Domain\Identity\Models\Session;
 use Padosoft\Iam\Domain\OAuth\Entities\ClientEntity;
 use Padosoft\Iam\Domain\OAuth\Entities\UserEntity;
 use Padosoft\Iam\Domain\OAuth\Oidc\OidcContext;
@@ -26,6 +28,7 @@ final class AuthorizeController
     public function __construct(
         private readonly AuthorizationServer $server,
         private readonly OidcContext $oidc,
+        private readonly SessionRegistry $sessions,
     ) {}
 
     public function authorize(Request $request): Response
@@ -52,9 +55,16 @@ final class AuthorizeController
             }
             $authRequest->setUser(new UserEntity($subject));
 
-            // OIDC: lega nonce (anti-replay) e auth_time all'auth code, per l'id_token allo scambio.
+            // OIDC: lega nonce e contesto sessione (sid/acr/amr/auth_time) all'auth code, per i
+            // claim dell'access token (sid) e dell'id_token (acr/amr) allo scambio.
             $nonce = $request->query('nonce');
-            $this->oidc->set(is_string($nonce) ? $nonce : null, new \DateTimeImmutable);
+            $session = $this->resolveSession($request);
+            if ($session !== null) {
+                $this->oidc->set(is_string($nonce) ? $nonce : null, ($session->created_at ?? now())->toDateTimeImmutable());
+                $this->oidc->setSession($session->id, $session->aal, $this->amrFor($session->aal));
+            } else {
+                $this->oidc->set(is_string($nonce) ? $nonce : null, new \DateTimeImmutable);
+            }
 
             // Consenso: first-party → implicito; third-party → consent UI esplicita (v1.x) → negato qui.
             $client = $authRequest->getClient();
@@ -66,6 +76,35 @@ final class AuthorizeController
         }
 
         return $this->toSymfonyResponse($result);
+    }
+
+    /** Sessione IAM corrente (sid legato alla sessione Laravel al login), se ancora attiva. */
+    private function resolveSession(Request $request): ?Session
+    {
+        if (!$request->hasSession()) {
+            return null;
+        }
+        $sid = $request->session()->get('iam_sid');
+        if (!is_string($sid) || $sid === '' || !$this->sessions->active($sid)) {
+            return null;
+        }
+
+        return Session::query()->whereKey($sid)->first();
+    }
+
+    /**
+     * Metodi di autenticazione (amr) derivati dall'AAL. I metodi puntuali (pwd/otp/passkey/hwk)
+     * li fornisce il login reale (Fortify/passkeys, M5.4/deploy); qui un default coerente con l'AAL.
+     *
+     * @return list<string>
+     */
+    private function amrFor(string $aal): array
+    {
+        return match ($aal) {
+            'aal3' => ['pwd', 'hwk'],
+            'aal2' => ['pwd', 'mfa'],
+            default => ['pwd'],
+        };
     }
 
     private function redirectToLogin(): Response

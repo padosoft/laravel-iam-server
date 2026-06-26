@@ -7,6 +7,7 @@ namespace Padosoft\Iam\Domain\OAuth\Token;
 use League\OAuth2\Server\Entities\ScopeEntityInterface;
 use Padosoft\Iam\Domain\OAuth\Entities\AccessTokenEntity;
 use Padosoft\Iam\Domain\OAuth\Entities\ClientEntity;
+use Padosoft\Iam\Domain\OAuth\Oidc\OidcContext;
 use Padosoft\Iam\Domain\Organizations\Models\Organization;
 
 /**
@@ -16,6 +17,8 @@ use Padosoft\Iam\Domain\Organizations\Models\Organization;
  */
 final class AccessTokenClaims
 {
+    public function __construct(private readonly OidcContext $oidc) {}
+
     /**
      * @return array<string, mixed>
      */
@@ -43,6 +46,12 @@ final class AccessTokenClaims
             $claims['org'] = $client->organizationKey;
         }
         $claims['policy_version'] = $this->policyVersion($organizationId);
+
+        // sid: lega l'access token alla sessione server-side (revoca prima della scadenza, doc 10 §3).
+        $sid = $this->oidc->sid();
+        if ($sid !== null) {
+            $claims['sid'] = $sid;
+        }
 
         return $claims;
     }
