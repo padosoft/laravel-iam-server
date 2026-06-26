@@ -12,11 +12,13 @@ use Padosoft\Iam\Domain\Crypto\Models\DataKey;
 
 /**
  * Cifratura segreti/PII con envelope encryption (doc 11 §3-§4, §8).
- * - con `scope`: DEK per-scope persistita in iam_data_keys → abilita crypto-shredding GDPR.
- * - senza `scope`: DEK per-valore, incartata e salvata nel valore stesso.
+ * - con `scope`: DEK per-scope in iam_data_keys → crypto-shredding GDPR.
+ * - senza `scope`: DEK per-valore, incartata nel valore stesso.
  *
- * Concorrenza: la DEK per-scope è gestita in transazione con lockForUpdate, così
- * encrypt/shred sullo stesso scope sono serializzati (no race read-DEK-then-shred).
+ * Concorrenza: per lo scope, l'INTERA cifratura avviene dentro una transazione con
+ * lockForUpdate sulla riga DEK → il lock è tenuto fino a dopo `sodium_crypto_secretbox`,
+ * quindi uno `shred()` concorrente (UPDATE sulla stessa riga) attende il commit:
+ * niente ciphertext prodotto con una DEK già distrutta (no silent data loss post-shred).
  */
 final class LocalSecretCipher implements SecretCipher
 {
@@ -24,27 +26,30 @@ final class LocalSecretCipher implements SecretCipher
 
     public function encrypt(string $plaintext, ?string $scope = null): array
     {
-        if ($scope !== null) {
-            [$dek, $keyId, $keyVersion] = $this->scopedDekForEncrypt($scope);
-            $wrappedDek = null;
-        } else {
-            $generated = $this->keys->generateDataKey();
-            $dek = $generated['plaintext'];
-            $wrappedDek = $generated['wrapped']['ciphertext'];
-            $keyId = $generated['wrapped']['key_id'];
-            $keyVersion = $generated['wrapped']['key_version'];
-        }
+        return $scope === null
+            ? $this->encryptWithFreshDek($plaintext)
+            : $this->encryptScoped($plaintext, $scope);
+    }
 
-        try {
-            $nonce = random_bytes(SODIUM_CRYPTO_SECRETBOX_NONCEBYTES);
-            $ciphertext = base64_encode($nonce.sodium_crypto_secretbox($plaintext, $nonce, $dek));
-        } finally {
-            sodium_memzero($dek);
-        }
+    /** @return array{ciphertext: string, wrapped_dek: string|null, key_id: string, key_version: int, scope: string|null} */
+    private function encryptScoped(string $plaintext, string $scope): array
+    {
+        $ciphertext = '';
+        $keyId = '';
+        $keyVersion = 0;
+
+        // L'INTERA cifratura sta nella transazione: il lock sulla riga DEK è tenuto fino al
+        // commit, quindi uno shred() concorrente attende → niente ciphertext con DEK distrutta.
+        DB::transaction(function () use ($plaintext, $scope, &$ciphertext, &$keyId, &$keyVersion): void {
+            [$dek, $kid, $kver] = $this->lockedScopedDek($scope);
+            $ciphertext = $this->seal($plaintext, $dek);
+            $keyId = $kid;
+            $keyVersion = $kver;
+        });
 
         return [
             'ciphertext' => $ciphertext,
-            'wrapped_dek' => $wrappedDek,
+            'wrapped_dek' => null,
             'key_id' => $keyId,
             'key_version' => $keyVersion,
             'scope' => $scope,
@@ -87,8 +92,7 @@ final class LocalSecretCipher implements SecretCipher
     }
 
     /**
-     * Crypto-shredding GDPR: distrugge la DEK dello scope (idempotente: non sovrascrive
-     * il timestamp di una distruzione già avvenuta). TODO(M7): emettere audit event.
+     * Crypto-shredding GDPR: distrugge la DEK dello scope (idempotente). TODO(M7): audit event.
      */
     public function shred(string $scope): void
     {
@@ -98,41 +102,66 @@ final class LocalSecretCipher implements SecretCipher
             ->update(['wrapped_dek' => null, 'shredded_at' => now()]);
     }
 
+    /** @return array{ciphertext: string, wrapped_dek: string|null, key_id: string, key_version: int, scope: string|null} */
+    private function encryptWithFreshDek(string $plaintext): array
+    {
+        $generated = $this->keys->generateDataKey();
+        $ciphertext = $this->seal($plaintext, $generated['plaintext']);
+
+        return [
+            'ciphertext' => $ciphertext,
+            'wrapped_dek' => $generated['wrapped']['ciphertext'],
+            'key_id' => $generated['wrapped']['key_id'],
+            'key_version' => $generated['wrapped']['key_version'],
+            'scope' => null,
+        ];
+    }
+
+    /** Cifra con AEAD; azzera la DEK in ogni caso (anche su eccezione). */
+    private function seal(string $plaintext, string $dek): string
+    {
+        try {
+            $nonce = random_bytes(SODIUM_CRYPTO_SECRETBOX_NONCEBYTES);
+
+            return base64_encode($nonce.sodium_crypto_secretbox($plaintext, $nonce, $dek));
+        } finally {
+            sodium_memzero($dek);
+        }
+    }
+
     /**
-     * DEK per cifrare nello scope (get-or-create, race-safe via lock + unique).
+     * DEK dello scope (get-or-create) — da chiamare DENTRO una transazione: il lockForUpdate
+     * è tenuto fino al commit del chiamante (così copre anche la cifratura successiva).
      *
      * @return array{0: string, 1: string, 2: int} [dek, key_id, key_version]
      */
-    private function scopedDekForEncrypt(string $scope): array
+    private function lockedScopedDek(string $scope): array
     {
-        return DB::transaction(function () use ($scope): array {
-            $row = DataKey::query()->where('scope', $scope)->lockForUpdate()->first();
+        $row = DataKey::query()->where('scope', $scope)->lockForUpdate()->first();
 
-            if ($row !== null && $row->shredded_at !== null) {
-                throw new \RuntimeException("Scope {$scope} è stato crypto-shredded: impossibile cifrare nuovi dati.");
-            }
-            if ($row !== null) {
-                return [$this->unwrapRow($row), $row->key_id, $row->key_version];
-            }
+        if ($row !== null && $row->shredded_at !== null) {
+            throw new \RuntimeException("Scope {$scope} è stato crypto-shredded: impossibile cifrare nuovi dati.");
+        }
+        if ($row !== null) {
+            return [$this->unwrapRow($row), $row->key_id, $row->key_version];
+        }
 
-            $generated = $this->keys->generateDataKey();
-            try {
-                DataKey::query()->create([
-                    'scope' => $scope,
-                    'wrapped_dek' => $generated['wrapped']['ciphertext'],
-                    'key_id' => $generated['wrapped']['key_id'],
-                    'key_version' => $generated['wrapped']['key_version'],
-                ]);
+        $generated = $this->keys->generateDataKey();
+        try {
+            DataKey::query()->create([
+                'scope' => $scope,
+                'wrapped_dek' => $generated['wrapped']['ciphertext'],
+                'key_id' => $generated['wrapped']['key_id'],
+                'key_version' => $generated['wrapped']['key_version'],
+            ]);
 
-                return [$generated['plaintext'], $generated['wrapped']['key_id'], $generated['wrapped']['key_version']];
-            } catch (UniqueConstraintViolationException) {
-                // Race: un'altra richiesta ha creato la DEK → riusa quella (la nostra è scartata).
-                sodium_memzero($generated['plaintext']);
-                $row = DataKey::query()->where('scope', $scope)->firstOrFail();
+            return [$generated['plaintext'], $generated['wrapped']['key_id'], $generated['wrapped']['key_version']];
+        } catch (UniqueConstraintViolationException) {
+            sodium_memzero($generated['plaintext']);
+            $row = DataKey::query()->where('scope', $scope)->lockForUpdate()->firstOrFail();
 
-                return [$this->unwrapRow($row), $row->key_id, $row->key_version];
-            }
-        });
+            return [$this->unwrapRow($row), $row->key_id, $row->key_version];
+        }
     }
 
     private function scopedDekForDecrypt(string $scope): string
