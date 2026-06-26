@@ -58,31 +58,4 @@ final class LocalKeyProvider implements KeyProvider
 
         return ['plaintext' => $dek, 'wrapped' => $this->wrapDataKey($dek)];
     }
-
-    // --- Firma JWT/JWKS: M4 (con lcobucci/jwt + chiavi asimmetriche ES256). ---
-
-    public function sign(string $payload): array
-    {
-        throw new \RuntimeException('sign(): chiavi di firma token in M4 (OAuth/OIDC).');
-    }
-
-    public function verify(string $payload, string $signature, string $kid): bool
-    {
-        throw new \RuntimeException('verify(): M4.');
-    }
-
-    public function activeSigningKey(): array
-    {
-        throw new \RuntimeException('activeSigningKey(): M4.');
-    }
-
-    public function publishableJwks(): array
-    {
-        throw new \RuntimeException('publishableJwks(): M4.');
-    }
-
-    public function rotateSigningKey(): array
-    {
-        throw new \RuntimeException('rotateSigningKey(): M4.');
-    }
 }

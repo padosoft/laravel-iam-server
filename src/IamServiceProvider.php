@@ -7,9 +7,11 @@ namespace Padosoft\Iam;
 use Padosoft\Iam\Contracts\Authorization\AuthorizationEngine;
 use Padosoft\Iam\Contracts\Crypto\KeyProvider;
 use Padosoft\Iam\Contracts\Crypto\SecretCipher;
+use Padosoft\Iam\Contracts\Crypto\TokenSigner;
 use Padosoft\Iam\Domain\Authorization\Pdp\NativeSqlEngine;
 use Padosoft\Iam\Domain\Crypto\LocalKeyProvider;
 use Padosoft\Iam\Domain\Crypto\LocalSecretCipher;
+use Padosoft\Iam\Domain\OAuth\Token\LocalTokenSigner;
 use Spatie\LaravelPackageTools\Package;
 use Spatie\LaravelPackageTools\PackageServiceProvider;
 
@@ -44,6 +46,27 @@ final class IamServiceProvider extends PackageServiceProvider
         // M3: crypto (envelope encryption + crypto-shredding).
         $this->app->singleton(KeyProvider::class, fn (): LocalKeyProvider => new LocalKeyProvider($this->resolveKek()));
         $this->app->singleton(SecretCipher::class, fn (): LocalSecretCipher => new LocalSecretCipher($this->app->make(KeyProvider::class)));
+
+        // M4: firma JWT (TokenSigner ES256).
+        $this->app->singleton(TokenSigner::class, fn (): LocalTokenSigner => new LocalTokenSigner(
+            $this->app->make(KeyProvider::class),
+            $this->resolveIssuer(),
+            $this->resolveOpensslConfig(),
+        ));
+    }
+
+    private function resolveIssuer(): string
+    {
+        $issuer = config('iam.tokens.issuer') ?? config('app.url');
+
+        return is_string($issuer) && $issuer !== '' ? $issuer : 'https://iam.local';
+    }
+
+    private function resolveOpensslConfig(): ?string
+    {
+        $path = config('iam.crypto.openssl_config');
+
+        return is_string($path) && $path !== '' ? $path : null;
     }
 
     /** Risolve la KEK locale (32 byte) da config; in dev/test la deriva da APP_KEY se assente. */

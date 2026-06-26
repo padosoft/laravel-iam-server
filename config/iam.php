@@ -32,6 +32,7 @@ return [
 
     // M4 — OAuth/OIDC (doc 13)
     'tokens' => [
+        'issuer' => env('IAM_ISSUER'), // default: app.url
         'access_ttl' => 900,
         'refresh_ttl' => 1209600,
         'signing_alg' => 'ES256', // RS256 | ES256 | EdDSA
@@ -42,6 +43,7 @@ return [
     'crypto' => [
         'driver' => env('IAM_KMS_DRIVER', 'local'), // local | aws | vault(v2) | azure(v2) | gcp(v2)
         'kek' => env('IAM_KEK'), // KEK base64 (32 byte). Vuoto in dev → derivata da APP_KEY.
+        'openssl_config' => env('IAM_OPENSSL_CONF'), // path openssl.cnf (necessario su Windows per la keygen EC)
         'keys_path' => storage_path('keys'),
         'aws' => ['kms_key_id' => env('IAM_AWS_KMS_KEY_ID'), 'region' => env('AWS_DEFAULT_REGION')],
     ],
