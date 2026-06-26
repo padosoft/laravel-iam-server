@@ -26,7 +26,8 @@ final class DataKey extends Model
 
     /** @var list<string> */
     protected $fillable = [
-        'scope', 'wrapped_dek', 'key_id', 'key_version', 'shredded_at',
+        // 'shredded_at' NON fillable: distruzione GDPR irreversibile, solo via SecretCipher::shred().
+        'scope', 'wrapped_dek', 'key_id', 'key_version',
     ];
 
     protected $casts = [

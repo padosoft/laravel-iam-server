@@ -35,6 +35,9 @@ final class LocalKeyProvider implements KeyProvider
 
     public function unwrapDataKey(array $wrapped): string
     {
+        if ($wrapped['key_id'] !== self::KEY_ID) {
+            throw new \RuntimeException("key_id '{$wrapped['key_id']}' sconosciuto: il driver locale non supporta rotazione/multi-KEK (vedi M3.x / KMS).");
+        }
         $raw = base64_decode($wrapped['ciphertext'], true);
         if ($raw === false || strlen($raw) <= SODIUM_CRYPTO_SECRETBOX_NONCEBYTES) {
             throw new \RuntimeException('Wrapped DEK non valida.');

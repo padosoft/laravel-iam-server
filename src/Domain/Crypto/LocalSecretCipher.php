@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Padosoft\Iam\Domain\Crypto;
 
+use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Facades\DB;
 use Padosoft\Iam\Contracts\Crypto\KeyProvider;
 use Padosoft\Iam\Contracts\Crypto\SecretCipher;
 use Padosoft\Iam\Domain\Crypto\Models\DataKey;
@@ -12,6 +14,9 @@ use Padosoft\Iam\Domain\Crypto\Models\DataKey;
  * Cifratura segreti/PII con envelope encryption (doc 11 §3-§4, §8).
  * - con `scope`: DEK per-scope persistita in iam_data_keys → abilita crypto-shredding GDPR.
  * - senza `scope`: DEK per-valore, incartata e salvata nel valore stesso.
+ *
+ * Concorrenza: la DEK per-scope è gestita in transazione con lockForUpdate, così
+ * encrypt/shred sullo stesso scope sono serializzati (no race read-DEK-then-shred).
  */
 final class LocalSecretCipher implements SecretCipher
 {
@@ -30,9 +35,12 @@ final class LocalSecretCipher implements SecretCipher
             $keyVersion = $generated['wrapped']['key_version'];
         }
 
-        $nonce = random_bytes(SODIUM_CRYPTO_SECRETBOX_NONCEBYTES);
-        $ciphertext = base64_encode($nonce.sodium_crypto_secretbox($plaintext, $nonce, $dek));
-        sodium_memzero($dek);
+        try {
+            $nonce = random_bytes(SODIUM_CRYPTO_SECRETBOX_NONCEBYTES);
+            $ciphertext = base64_encode($nonce.sodium_crypto_secretbox($plaintext, $nonce, $dek));
+        } finally {
+            sodium_memzero($dek);
+        }
 
         return [
             'ciphertext' => $ciphertext,
@@ -59,14 +67,18 @@ final class LocalSecretCipher implements SecretCipher
             ]);
         }
 
-        $raw = base64_decode($value['ciphertext'], true);
-        if ($raw === false || strlen($raw) <= SODIUM_CRYPTO_SECRETBOX_NONCEBYTES) {
-            throw new \RuntimeException('Ciphertext non valido.');
+        try {
+            $raw = base64_decode($value['ciphertext'], true);
+            if ($raw === false || strlen($raw) <= SODIUM_CRYPTO_SECRETBOX_NONCEBYTES) {
+                throw new \RuntimeException('Ciphertext non valido.');
+            }
+            $nonce = substr($raw, 0, SODIUM_CRYPTO_SECRETBOX_NONCEBYTES);
+            $box = substr($raw, SODIUM_CRYPTO_SECRETBOX_NONCEBYTES);
+            $plaintext = sodium_crypto_secretbox_open($box, $nonce, $dek);
+        } finally {
+            sodium_memzero($dek);
         }
-        $nonce = substr($raw, 0, SODIUM_CRYPTO_SECRETBOX_NONCEBYTES);
-        $box = substr($raw, SODIUM_CRYPTO_SECRETBOX_NONCEBYTES);
-        $plaintext = sodium_crypto_secretbox_open($box, $nonce, $dek);
-        sodium_memzero($dek);
+
         if ($plaintext === false) {
             throw new \RuntimeException('Decrypt fallito (dato manomesso o DEK errata).');
         }
@@ -74,46 +86,53 @@ final class LocalSecretCipher implements SecretCipher
         return $plaintext;
     }
 
+    /**
+     * Crypto-shredding GDPR: distrugge la DEK dello scope (idempotente: non sovrascrive
+     * il timestamp di una distruzione già avvenuta). TODO(M7): emettere audit event.
+     */
     public function shred(string $scope): void
     {
-        DataKey::query()->where('scope', $scope)->update([
-            'wrapped_dek' => null,
-            'shredded_at' => now(),
-        ]);
+        DataKey::query()
+            ->where('scope', $scope)
+            ->whereNull('shredded_at')
+            ->update(['wrapped_dek' => null, 'shredded_at' => now()]);
     }
 
     /**
-     * DEK per cifrare nello scope (get-or-create). Fallisce se lo scope è stato shredded.
+     * DEK per cifrare nello scope (get-or-create, race-safe via lock + unique).
      *
      * @return array{0: string, 1: string, 2: int} [dek, key_id, key_version]
      */
     private function scopedDekForEncrypt(string $scope): array
     {
-        $row = DataKey::query()->where('scope', $scope)->first();
+        return DB::transaction(function () use ($scope): array {
+            $row = DataKey::query()->where('scope', $scope)->lockForUpdate()->first();
 
-        if ($row !== null && $row->shredded_at !== null) {
-            throw new \RuntimeException("Scope {$scope} è stato crypto-shredded: impossibile cifrare nuovi dati.");
-        }
+            if ($row !== null && $row->shredded_at !== null) {
+                throw new \RuntimeException("Scope {$scope} è stato crypto-shredded: impossibile cifrare nuovi dati.");
+            }
+            if ($row !== null) {
+                return [$this->unwrapRow($row), $row->key_id, $row->key_version];
+            }
 
-        if ($row === null) {
             $generated = $this->keys->generateDataKey();
-            DataKey::query()->create([
-                'scope' => $scope,
-                'wrapped_dek' => $generated['wrapped']['ciphertext'],
-                'key_id' => $generated['wrapped']['key_id'],
-                'key_version' => $generated['wrapped']['key_version'],
-            ]);
+            try {
+                DataKey::query()->create([
+                    'scope' => $scope,
+                    'wrapped_dek' => $generated['wrapped']['ciphertext'],
+                    'key_id' => $generated['wrapped']['key_id'],
+                    'key_version' => $generated['wrapped']['key_version'],
+                ]);
 
-            return [$generated['plaintext'], $generated['wrapped']['key_id'], $generated['wrapped']['key_version']];
-        }
+                return [$generated['plaintext'], $generated['wrapped']['key_id'], $generated['wrapped']['key_version']];
+            } catch (UniqueConstraintViolationException) {
+                // Race: un'altra richiesta ha creato la DEK → riusa quella (la nostra è scartata).
+                sodium_memzero($generated['plaintext']);
+                $row = DataKey::query()->where('scope', $scope)->firstOrFail();
 
-        $dek = $this->keys->unwrapDataKey([
-            'ciphertext' => (string) $row->wrapped_dek,
-            'key_id' => $row->key_id,
-            'key_version' => $row->key_version,
-        ]);
-
-        return [$dek, $row->key_id, $row->key_version];
+                return [$this->unwrapRow($row), $row->key_id, $row->key_version];
+            }
+        });
     }
 
     private function scopedDekForDecrypt(string $scope): string
@@ -124,8 +143,13 @@ final class LocalSecretCipher implements SecretCipher
             throw new \RuntimeException("Scope {$scope}: DEK assente o crypto-shredded → dato irrecuperabile.");
         }
 
+        return $this->unwrapRow($row);
+    }
+
+    private function unwrapRow(DataKey $row): string
+    {
         return $this->keys->unwrapDataKey([
-            'ciphertext' => $row->wrapped_dek,
+            'ciphertext' => (string) $row->wrapped_dek,
             'key_id' => $row->key_id,
             'key_version' => $row->key_version,
         ]);

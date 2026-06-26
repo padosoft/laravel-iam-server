@@ -59,10 +59,16 @@ final class IamServiceProvider extends PackageServiceProvider
             return $raw;
         }
 
-        // Fallback dev: KEK derivata da APP_KEY. In PRODUZIONE usa una KEK esplicita / KMS (M3 AWS).
+        // KEK non configurata: in PRODUZIONE è obbligatoria (fail-closed); in dev la deriviamo.
+        if ($this->app->environment('production')) {
+            throw new \RuntimeException('iam.crypto.kek obbligatoria in produzione: configura una KEK esplicita (32 byte base64) o un driver KMS.');
+        }
         $appKey = config('app.key');
+        if (!is_string($appKey) || $appKey === '') {
+            throw new \RuntimeException('APP_KEY assente: impossibile derivare la KEK di sviluppo.');
+        }
 
-        return sodium_crypto_generichash(is_string($appKey) ? $appKey : '', '', SODIUM_CRYPTO_SECRETBOX_KEYBYTES);
+        return sodium_crypto_generichash($appKey, '', SODIUM_CRYPTO_SECRETBOX_KEYBYTES);
     }
 
     public function packageBooted(): void
