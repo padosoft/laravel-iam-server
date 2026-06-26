@@ -44,6 +44,7 @@ return [
     'oauth' => [
         'route_prefix' => 'oauth',
         'register_routes' => true,
+        'rate_limit' => 60,             // richieste/minuto sugli endpoint OAuth (anti-abuse, doc 13 §9)
         'auth_code_ttl' => 600,        // 10m
         'require_pkce' => true,         // PKCE S256 obbligatorio per i client public (doc 13 §9)
         'grants' => [

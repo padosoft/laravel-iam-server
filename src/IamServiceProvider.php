@@ -15,6 +15,7 @@ use Padosoft\Iam\Domain\Crypto\LocalKeyProvider;
 use Padosoft\Iam\Domain\Crypto\LocalSecretCipher;
 use Padosoft\Iam\Domain\OAuth\AuthorizationServerFactory;
 use Padosoft\Iam\Domain\OAuth\Oidc\OidcContext;
+use Padosoft\Iam\Domain\OAuth\RefreshTokenCrypto;
 use Padosoft\Iam\Domain\OAuth\Repositories\AccessTokenRepository;
 use Padosoft\Iam\Domain\OAuth\Repositories\AuthCodeRepository;
 use Padosoft\Iam\Domain\OAuth\Repositories\ClientRepository;
@@ -70,6 +71,8 @@ final class IamServiceProvider extends PackageServiceProvider
         // OidcContext: trasporta nonce/auth_time nella richiesta; singleton condiviso tra
         // AuthorizeController, ScopeRepository, AuthCodeRepository e la response type.
         $this->app->singleton(OidcContext::class);
+        // RefreshTokenCrypto: decifra i refresh token opachi (revocation) con la encryptionKey league.
+        $this->app->singleton(RefreshTokenCrypto::class, fn (): RefreshTokenCrypto => new RefreshTokenCrypto($this->resolveOauthEncryptionKey()));
         $this->app->singleton(AuthorizationServer::class, fn (): AuthorizationServer => (new AuthorizationServerFactory(
             $this->app->make(ClientRepository::class),
             $this->app->make(AccessTokenRepository::class),
@@ -178,7 +181,11 @@ final class IamServiceProvider extends PackageServiceProvider
         // M4b: rotte OAuth sotto il prefix configurato (default /oauth) + metadata/OIDC a root.
         if ((bool) config('iam.oauth.register_routes', true)) {
             $prefix = config('iam.oauth.route_prefix', 'oauth');
+            $rateLimit = config('iam.oauth.rate_limit', 60);
+            $middleware = is_int($rateLimit) && $rateLimit > 0 ? ['throttle:'.$rateLimit.',1'] : [];
+
             Route::prefix(is_string($prefix) ? $prefix : 'oauth')
+                ->middleware($middleware)
                 ->group(__DIR__.'/../routes/oauth.php');
             Route::group([], __DIR__.'/../routes/oidc.php');
         }
