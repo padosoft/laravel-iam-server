@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Padosoft\Iam\Domain\Identity\Federation;
 
+use Illuminate\Database\UniqueConstraintViolationException;
 use Padosoft\Iam\Domain\Identity\Models\FederatedIdentity;
 use Padosoft\Iam\Domain\Identity\Models\FederatedProvider;
 use Padosoft\Iam\Domain\Identity\Models\User;
@@ -23,6 +24,18 @@ final class AccountLinker
     ) {}
 
     public function resolve(FederatedProvider $provider, FederatedProfile $profile): LinkOutcome
+    {
+        try {
+            return $this->doResolve($provider, $profile);
+        } catch (UniqueConstraintViolationException) {
+            // Una richiesta concorrente ha creato l'utente o l'identità (unique su email o su
+            // (provider, provider_subject)): ri-risolvi UNA volta sullo stato ormai committato →
+            // si converge sull'esito del vincitore (linked) o sul pending corretto.
+            return $this->doResolve($provider, $profile);
+        }
+    }
+
+    private function doResolve(FederatedProvider $provider, FederatedProfile $profile): LinkOutcome
     {
         if ($profile->providerSubject === '') {
             throw new \InvalidArgumentException('provider_subject mancante.');
