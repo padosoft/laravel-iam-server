@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Padosoft\Iam\Domain\OAuth\Repositories;
 
+use DateTimeImmutable;
 use Illuminate\Support\Facades\DB;
 use League\OAuth2\Server\Entities\RefreshTokenEntityInterface;
 use League\OAuth2\Server\Exception\UniqueTokenIdentifierConstraintViolationException;
@@ -12,6 +13,7 @@ use Padosoft\Iam\Domain\OAuth\Entities\RefreshTokenEntity;
 use Padosoft\Iam\Domain\OAuth\Models\OauthAccessToken;
 use Padosoft\Iam\Domain\OAuth\Models\OauthRefreshToken;
 use Padosoft\Iam\Domain\OAuth\Models\OauthTokenChain;
+use Padosoft\Iam\Domain\OAuth\Oidc\OidcContext;
 
 /**
  * Refresh token store con rotation + replay detection (doc 13 §6/§10, RFC 9700).
@@ -27,6 +29,8 @@ use Padosoft\Iam\Domain\OAuth\Models\OauthTokenChain;
 final class RefreshTokenRepository implements RefreshTokenRepositoryInterface
 {
     private ?string $pendingChainId = null;
+
+    public function __construct(private readonly OidcContext $oidc) {}
 
     public function getNewRefreshToken(): RefreshTokenEntityInterface
     {
@@ -46,12 +50,15 @@ final class RefreshTokenRepository implements RefreshTokenRepositoryInterface
         $accessJti = $refreshTokenEntity->getAccessToken()->getIdentifier();
         $expiresAt = $refreshTokenEntity->getExpiryDateTime();
 
-        DB::transaction(function () use ($id, $chainId, $accessJti, $expiresAt): void {
+        $authTime = $this->oidc->authTime();
+
+        DB::transaction(function () use ($id, $chainId, $accessJti, $expiresAt, $authTime): void {
             // Lock della riga catena: serializza con revokeChain. Se la catena è già compromessa
             // (replay rilevato concorrentemente) il nuovo token nasce REVOCATO → niente token figlio
             // sfuggito alla revoca, qualunque sia l'ordine delle due operazioni.
+            // Alla CREAZIONE della catena fissa l'auth_time originale (per gli id_token dei refresh).
             $chain = OauthTokenChain::query()->lockForUpdate()->find($chainId)
-                ?? OauthTokenChain::query()->create(['chain_id' => $chainId]);
+                ?? OauthTokenChain::query()->create(['chain_id' => $chainId, 'auth_time' => $authTime]);
             $compromised = $chain->compromised;
 
             OauthRefreshToken::query()->create([
@@ -96,6 +103,18 @@ final class RefreshTokenRepository implements RefreshTokenRepositoryInterface
     {
         $chain = OauthRefreshToken::query()->where('refresh_token_id', $oldRefreshTokenId)->value('chain_id');
         $this->pendingChainId = is_string($chain) ? $chain : null;
+    }
+
+    /** auth_time originale della catena cui appartiene il refresh token (per l'id_token sui refresh). */
+    public function chainAuthTime(string $refreshTokenId): ?DateTimeImmutable
+    {
+        $chainId = OauthRefreshToken::query()->where('refresh_token_id', $refreshTokenId)->value('chain_id');
+        if (!is_string($chainId)) {
+            return null;
+        }
+        $chain = OauthTokenChain::query()->whereKey($chainId)->first();
+
+        return $chain?->auth_time?->toDateTimeImmutable();
     }
 
     /**

@@ -6,6 +6,7 @@ namespace Padosoft\Iam\Domain\OAuth\Grants;
 
 use League\OAuth2\Server\Exception\OAuthServerException;
 use League\OAuth2\Server\Grant\RefreshTokenGrant;
+use Padosoft\Iam\Domain\OAuth\Oidc\OidcContext;
 use Padosoft\Iam\Domain\OAuth\Repositories\RefreshTokenRepository;
 use Psr\Http\Message\ServerRequestInterface;
 
@@ -18,8 +19,10 @@ use Psr\Http\Message\ServerRequestInterface;
  */
 final class IamRefreshTokenGrant extends RefreshTokenGrant
 {
-    public function __construct(private readonly RefreshTokenRepository $iamRefreshTokens)
-    {
+    public function __construct(
+        private readonly RefreshTokenRepository $iamRefreshTokens,
+        private readonly OidcContext $oidc,
+    ) {
         parent::__construct($iamRefreshTokens);
     }
 
@@ -54,6 +57,10 @@ final class IamRefreshTokenGrant extends RefreshTokenGrant
 
         // Token valido e claimato: la prossima rotazione prosegue la stessa catena.
         $this->iamRefreshTokens->continueChain($current);
+
+        // OIDC: l'id_token emesso sul refresh deve riportare l'auth_time ORIGINALE (no max_age
+        // bypass) e NON un nuovo nonce (il nonce è single-use della richiesta di autenticazione).
+        $this->oidc->set(null, $this->iamRefreshTokens->chainAuthTime($current));
 
         return $validated;
     }

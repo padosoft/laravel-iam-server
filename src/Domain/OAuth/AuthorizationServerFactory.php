@@ -65,7 +65,7 @@ final class AuthorizationServerFactory
         }
         if (($grants['refresh_token'] ?? false) === true) {
             // Rotation (default league) + replay detection a livello di catena (RFC 9700).
-            $refresh = new IamRefreshTokenGrant($this->refreshTokens);
+            $refresh = new IamRefreshTokenGrant($this->refreshTokens, $this->oidc);
             $refresh->setRefreshTokenTTL($this->refreshTtl());
             $server->enableGrantType($refresh, $this->accessTtl());
         }

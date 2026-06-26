@@ -50,6 +50,9 @@ return new class extends Migration
         Schema::create('iam_oauth_token_chains', function (Blueprint $t): void {
             $t->string('chain_id')->primary();
             $t->boolean('compromised')->default(false);
+            // auth_time ORIGINALE dell'autenticazione: costante per catena, propagato agli
+            // id_token emessi sui refresh (no max_age bypass, OIDC Core §12.2).
+            $t->timestamp('auth_time')->nullable();
             $t->timestamps();
         });
     }
