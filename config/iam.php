@@ -9,6 +9,9 @@ declare(strict_types=1);
 
 return [
 
+    // Il server possiede lo schema; opt-out possibile (es. se gestisci tu le migration).
+    'run_migrations' => env('IAM_RUN_MIGRATIONS', true),
+
     // M5 — Identity & Session (doc 10)
     'authentication' => [
         'hashing' => 'argon2id',

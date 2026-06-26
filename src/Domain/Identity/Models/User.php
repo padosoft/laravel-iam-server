@@ -23,7 +23,10 @@ final class User extends Model
 
     protected $table = 'iam_users';
 
-    protected $guarded = [];
+    /** @var list<string> */
+    protected $fillable = [
+        'status', 'email', 'email_verified_at', 'name', 'primary_identity_id',
+    ];
 
     /** @var array<string, mixed> */
     protected $attributes = [

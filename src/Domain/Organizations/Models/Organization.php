@@ -22,7 +22,10 @@ final class Organization extends Model
 
     protected $table = 'iam_organizations';
 
-    protected $guarded = [];
+    /** @var list<string> */
+    protected $fillable = [
+        'key', 'name', 'status', 'metadata',
+    ];
 
     /** @var array<string, mixed> */
     protected $attributes = [

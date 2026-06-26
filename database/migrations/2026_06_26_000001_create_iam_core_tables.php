@@ -62,7 +62,7 @@ return new class extends Migration
 
         Schema::create('iam_grants', function (Blueprint $t): void {
             $t->ulid('id')->primary();
-            $t->foreignUlid('organization_id')->nullable()->constrained('iam_organizations')->nullOnDelete();
+            $t->foreignUlid('organization_id')->nullable()->constrained('iam_organizations')->cascadeOnDelete();
             $t->string('application_key')->nullable();
             $t->string('subject_type'); // user|group|service_account|external_group|agent
             $t->string('subject_id');
@@ -71,6 +71,7 @@ return new class extends Migration
             $t->string('resource_ref')->nullable(); // scope/risorsa (FGA-ready)
             $t->json('conditions_json')->nullable(); // ABAC
             $t->string('effect')->default('permit'); // permit|deny
+            $t->char('identity_hash', 64)->nullable(); // dedup deterministico (Grant::booted)
             // --- IGA-ready (da v1) ---
             $t->timestamp('valid_from')->nullable();
             $t->timestamp('valid_until')->nullable();
@@ -79,6 +80,7 @@ return new class extends Migration
             $t->string('approval_ref')->nullable();
             $t->boolean('is_privileged')->default(false);
             $t->boolean('activation_required')->default(false);
+            $t->timestamp('activated_at')->nullable(); // PIM: quando il grant è stato attivato
             $t->timestamp('last_used_at')->nullable();
             $t->string('created_by')->nullable();
             $t->timestamp('revoked_at')->nullable();
@@ -88,6 +90,7 @@ return new class extends Migration
             $t->index(['subject_type', 'subject_id']);
             $t->index(['application_key', 'privilege_key']);
             $t->index('organization_id');
+            $t->unique('identity_hash', 'iam_grants_identity_unique');
         });
     }
 

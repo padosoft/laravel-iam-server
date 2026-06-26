@@ -32,7 +32,10 @@ final class IamServiceProvider extends PackageServiceProvider
 
     public function packageBooted(): void
     {
-        // M1: migration canoniche (identity, org, membership, grant)
-        $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
+        // M1: migration canoniche (identity, org, membership, grant).
+        // Il server possiede lo schema; disattivabile via config (iam.run_migrations).
+        if ((bool) config('iam.run_migrations', true)) {
+            $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
+        }
     }
 }

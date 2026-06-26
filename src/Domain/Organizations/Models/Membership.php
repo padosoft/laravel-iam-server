@@ -21,7 +21,10 @@ final class Membership extends Model
 
     protected $table = 'iam_memberships';
 
-    protected $guarded = [];
+    /** @var list<string> */
+    protected $fillable = [
+        'organization_id', 'user_id', 'status', 'source', 'joined_at', 'removed_at',
+    ];
 
     /** @var array<string, mixed> */
     protected $attributes = [

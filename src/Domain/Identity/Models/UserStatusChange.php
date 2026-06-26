@@ -19,7 +19,10 @@ final class UserStatusChange extends Model
 
     protected $table = 'iam_user_status_changes';
 
-    protected $guarded = [];
+    /** @var list<string> */
+    protected $fillable = [
+        'user_id', 'from_status', 'to_status', 'source', 'reason', 'actor_ref', 'occurred_at',
+    ];
 
     protected $casts = [
         'occurred_at' => 'datetime',
