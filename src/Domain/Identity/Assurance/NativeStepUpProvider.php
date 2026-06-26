@@ -53,8 +53,21 @@ final class NativeStepUpProvider implements StepUpProvider
             return new StepUpResult(false, Aal::AAL1);
         }
 
+        // Fattore prima del consumo: un codice errato NON brucia la challenge (retry possibile).
         $subject = new SubjectRef('user', $challenge->user_id);
         if (!$this->verifier->verify($subject, $payload)) {
+            return new StepUpResult(false, Aal::AAL1);
+        }
+
+        // Claim ATOMICO single-use: l'UPDATE condizionale consuma la challenge; solo UNA richiesta
+        // concorrente ottiene affected=1 → solo quella eleva (chiude la TOCTOU del doppio step-up).
+        $now = Carbon::now();
+        $claimed = StepUpChallengeModel::query()
+            ->whereKey($challenge->id)
+            ->whereNull('consumed_at')
+            ->where('expires_at', '>', $now)
+            ->update(['consumed_at' => $now]);
+        if ($claimed !== 1) {
             return new StepUpResult(false, Aal::AAL1);
         }
 
@@ -66,7 +79,6 @@ final class NativeStepUpProvider implements StepUpProvider
 
         $target = Aal::fromString($challenge->required_aal);
         $session->recordStepUp($target->value);
-        $challenge->markConsumed();
 
         return new StepUpResult(true, $target);
     }

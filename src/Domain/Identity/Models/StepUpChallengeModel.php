@@ -35,9 +35,4 @@ final class StepUpChallengeModel extends Model
         'expires_at' => 'datetime',
         'consumed_at' => 'datetime',
     ];
-
-    public function markConsumed(): void
-    {
-        $this->forceFill(['consumed_at' => now()])->save();
-    }
 }
