@@ -36,6 +36,13 @@ final class ClientRepository implements ClientRepositoryInterface
             return false;
         }
 
+        // client_credentials è riservato ai client confidential (RFC 6749 §4.4): un client
+        // public non deve poter ottenere token col solo client_id. Rigetto qui (defense-in-depth,
+        // oltre al controllo isConfidential del grant league).
+        if ($grantType === 'client_credentials' && !$client->is_confidential) {
+            return false;
+        }
+
         // Client confidential → autenticazione via secret (hash). Mai accettare secret vuoto.
         if ($client->is_confidential) {
             return is_string($client->secret) && $client->secret !== ''
@@ -43,7 +50,8 @@ final class ClientRepository implements ClientRepositoryInterface
                 && Hash::check($clientSecret, $client->secret);
         }
 
-        // Client public → nessun secret atteso (l'integrità è garantita da PKCE nel grant).
+        // Client public → nessun secret atteso (l'integrità del flusso è garantita da PKCE
+        // nell'Authorization Code grant; il client_credentials è già stato escluso sopra).
         return $clientSecret === null || $clientSecret === '';
     }
 

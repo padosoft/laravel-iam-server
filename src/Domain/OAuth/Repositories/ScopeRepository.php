@@ -41,7 +41,14 @@ final class ScopeRepository implements ScopeRepositoryInterface
         ?string $authCodeId = null,
     ): array {
         $allowed = $clientEntity instanceof ClientEntity ? $clientEntity->allowedScopes : null;
+
+        // Fail-closed: nessuno scope dichiarato → nessuno scope concesso (NON "tutti").
         if ($allowed === null) {
+            return [];
+        }
+
+        // Wildcard ESPLICITO (client super-admin): solo se dichiarato con il sentinel '*'.
+        if (in_array('*', $allowed, true)) {
             return array_values($scopes);
         }
 
