@@ -98,28 +98,33 @@ final class NativeSqlEngine implements AuthorizationEngine
     /** @return Collection<int, Grant> */
     private function subjectGrants(DecisionQuery $q): Collection
     {
+        // Fail-closed: i filtri org/app sono SEMPRE applicati. Se la query non specifica
+        // org/app, `orWhere(col, null)` diventa `col IS NULL` → matchano solo i grant
+        // globali, mai quelli scoped di un altro tenant/app (no cross-tenant/app escalation).
         return Grant::query()->active()
             ->where('subject_type', $q->subject->type)
             ->where('subject_id', $q->subject->id)
-            ->when($q->organizationId !== null, fn (Builder $b) => $b->where(
-                fn (Builder $w) => $w->whereNull('organization_id')->orWhere('organization_id', $q->organizationId),
-            ))
-            ->when($q->applicationKey !== null, fn (Builder $b) => $b->where(
-                fn (Builder $w) => $w->whereNull('application_key')->orWhere('application_key', $q->applicationKey),
-            ))
+            ->where(fn (Builder $w) => $w->whereNull('organization_id')->orWhere('organization_id', $q->organizationId))
+            ->where(fn (Builder $w) => $w->whereNull('application_key')->orWhere('application_key', $q->applicationKey))
             ->get();
     }
 
     private function grantsPermission(Grant $grant, string $permissionFullKey): bool
     {
         return match ($grant->privilege_type) {
-            'permission' => $grant->privilege_key === $permissionFullKey,
+            'permission' => $grant->privilege_key === $permissionFullKey && !$this->permissionDeprecated($permissionFullKey),
             'role' => Role::query()
                 ->where('full_key', $grant->privilege_key)
-                ->whereHas('permissions', fn (Builder $b) => $b->where('full_key', $permissionFullKey))
+                ->whereNull('deprecated_at')
+                ->whereHas('permissions', fn (Builder $b) => $b->where('full_key', $permissionFullKey)->whereNull('deprecated_at'))
                 ->exists(),
             default => false, // relation → ReBAC (M2.x)
         };
+    }
+
+    private function permissionDeprecated(string $fullKey): bool
+    {
+        return Permission::query()->where('full_key', $fullKey)->whereNotNull('deprecated_at')->exists();
     }
 
     private function requiresStepUp(string $permissionFullKey): bool

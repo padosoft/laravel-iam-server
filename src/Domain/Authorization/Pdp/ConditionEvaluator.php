@@ -23,16 +23,17 @@ final class ConditionEvaluator
             if (!is_array($spec)) {
                 continue;
             }
-            /** @var array<string, mixed> $spec */
+            $hasField = array_key_exists($field, $context);
+            $actual = $context[$field] ?? null;
             foreach ($spec as $op => $expected) {
-                $actual = $context[$field] ?? null;
-                if (!$this->compare($actual, (string) $op, $expected)) {
+                // Fail-closed: campo assente dal context → condizione NON soddisfatta.
+                if (!$hasField || !$this->compare($actual, (string) $op, $expected)) {
                     $failed[] = sprintf(
                         '%s %s %s (actual: %s)',
                         $field,
                         (string) $op,
                         $this->stringify($expected),
-                        $this->stringify($actual),
+                        $hasField ? $this->stringify($actual) : 'ASSENTE',
                     );
                 }
             }
@@ -46,8 +47,8 @@ final class ConditionEvaluator
         $numeric = is_numeric($actual) && is_numeric($expected);
 
         return match ($op) {
-            '=', '==' => $actual == $expected,
-            '!=' => $actual != $expected,
+            '=', '==' => $actual === $expected,
+            '!=' => $actual !== $expected,
             '<' => $numeric && (float) $actual < (float) $expected,
             '<=' => $numeric && (float) $actual <= (float) $expected,
             '>' => $numeric && (float) $actual > (float) $expected,
