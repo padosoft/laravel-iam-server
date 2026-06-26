@@ -38,10 +38,10 @@ final class OauthClient extends Model
         'is_confidential', 'is_first_party', 'organization_id', 'application_key',
     ];
 
-    /** @var array<string, mixed> */
+    /** @var array<string, mixed> Secure-by-default: third-party (consenso esplicito) salvo marcatura. */
     protected $attributes = [
         'is_confidential' => true,
-        'is_first_party' => true,
+        'is_first_party' => false,
     ];
 
     protected $casts = [

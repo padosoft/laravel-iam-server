@@ -27,7 +27,9 @@ return new class extends Migration
             $t->json('grants');                          // grant ammessi: client_credentials|authorization_code|refresh_token
             $t->json('scopes')->nullable();              // scope ammessi (subset del catalogo)
             $t->boolean('is_confidential')->default(true);
-            $t->boolean('is_first_party')->default(true); // first-party → consenso implicito (doc 13 §7)
+            // Secure-by-default: un client è third-party (consenso esplicito) finché non è
+            // marcato esplicitamente first-party. Mai concedere consenso implicito per omissione.
+            $t->boolean('is_first_party')->default(false); // first-party → consenso implicito (doc 13 §7)
             $t->foreignUlid('organization_id')->nullable()->constrained('iam_organizations')->nullOnDelete();
             $t->string('application_key')->nullable();    // link all'Application Registry (M6)
             $t->timestamp('revoked_at')->nullable();

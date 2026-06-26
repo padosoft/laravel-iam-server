@@ -30,7 +30,7 @@ final class ClientEntity implements ClientEntityInterface
         public readonly ?string $organizationId = null,
         public readonly ?string $organizationKey = null,
         public readonly ?array $allowedScopes = null,
-        public readonly bool $isFirstParty = true,
+        public readonly bool $isFirstParty = false,
     ) {
         $this->identifier = $identifier;
         $this->name = $name;
