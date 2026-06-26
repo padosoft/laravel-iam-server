@@ -18,6 +18,7 @@ use Padosoft\Iam\Domain\Organizations\Models\Organization;
  * @property string|null $organization_id
  * @property string|null $application_key
  * @property string|null $resource_ref
+ * @property array<string, mixed>|null $conditions_json
  * @property string $subject_type
  * @property string $subject_id
  * @property string $privilege_type

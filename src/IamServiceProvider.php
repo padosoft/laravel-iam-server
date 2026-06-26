@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Padosoft\Iam;
 
+use Padosoft\Iam\Contracts\Authorization\AuthorizationEngine;
+use Padosoft\Iam\Domain\Authorization\Pdp\NativeSqlEngine;
 use Spatie\LaravelPackageTools\Package;
 use Spatie\LaravelPackageTools\PackageServiceProvider;
 
@@ -28,6 +30,12 @@ final class IamServiceProvider extends PackageServiceProvider
             ->name('laravel-iam-server')
             ->hasConfigFile('iam');
         // ->hasRoutes('api', 'oauth', 'auth')->hasCommands(...)  // M4+
+    }
+
+    public function packageRegistered(): void
+    {
+        // M2: PDP engine nativo (RBAC+ABAC, deny-overrides) come AuthorizationEngine.
+        $this->app->bind(AuthorizationEngine::class, NativeSqlEngine::class);
     }
 
     public function packageBooted(): void
