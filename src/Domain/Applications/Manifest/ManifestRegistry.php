@@ -4,17 +4,19 @@ declare(strict_types=1);
 
 namespace Padosoft\Iam\Domain\Applications\Manifest;
 
+use Padosoft\Iam\Domain\Applications\Models\Application;
 use Padosoft\Iam\Domain\Applications\Models\Manifest;
 
 /**
- * Registra e fa avanzare il lifecycle di un manifest (doc 01 §10.1). M6.1: submit + validate
- * (submitted → validated|rejected). Diff/apply/approval nelle slice successive.
+ * Registra e fa avanzare il lifecycle di un manifest (doc 01 §10.1): submit → validate → diff →
+ * (approve) → apply, con reject e rollback.
  */
 final class ManifestRegistry
 {
     public function __construct(
         private readonly ManifestValidator $validator,
         private readonly ManifestDiffer $differ,
+        private readonly ManifestApplier $applier,
     ) {}
 
     /**
@@ -97,6 +99,39 @@ final class ManifestRegistry
         $manifest->forceFill(['status' => 'rejected', 'approved_by' => $approvedBy])->save();
 
         return true;
+    }
+
+    /** Applica un manifest approved (delega all'applier). */
+    public function apply(Manifest $manifest): Application
+    {
+        return $this->applier->apply($manifest);
+    }
+
+    /**
+     * Rollback: ri-applica la PRECEDENTE versione applicata dell'app (doc 01 §10.1). La versione
+     * corrente passa a rolled_back. Ritorna null se non c'è una versione precedente a cui tornare.
+     */
+    public function rollback(string $appKey): ?Application
+    {
+        $app = Application::query()->where('key', $appKey)->first();
+        if ($app === null || !is_string($app->current_manifest_id)) {
+            return null;
+        }
+
+        $previous = Manifest::query()
+            ->where('application_key', $appKey)
+            ->where('status', 'applied')
+            ->whereKeyNot($app->current_manifest_id)
+            ->orderByDesc('version')
+            ->first();
+        if ($previous === null) {
+            return null;
+        }
+
+        Manifest::query()->whereKey($app->current_manifest_id)->update(['status' => 'rolled_back']);
+        $previous->forceFill(['status' => 'approved'])->save();
+
+        return $this->applier->apply($previous);
     }
 
     /**

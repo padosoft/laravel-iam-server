@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Padosoft\Iam\Domain\Applications\Manifest;
 
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 use Padosoft\Iam\Domain\Applications\Models\Application;
 use Padosoft\Iam\Domain\Applications\Models\Manifest;
 use Padosoft\Iam\Domain\Authorization\Models\Permission;
@@ -18,20 +20,33 @@ use Padosoft\Iam\Domain\OAuth\Models\OauthClient;
  */
 final class ManifestApplier
 {
+    /** Secret in chiaro generato per un client confidential nuovo (da consegnare una sola volta). */
+    private ?string $generatedSecret = null;
+
     public function apply(Manifest $manifest): Application
     {
         if ($manifest->status !== 'approved') {
             throw new \RuntimeException("Solo un manifest 'approved' è applicabile (status attuale: {$manifest->status}).");
         }
 
+        $this->generatedSecret = null;
         $payload = $manifest->payload;
         $appKey = $manifest->application_key;
         $app = $this->arr($payload['app'] ?? null);
 
         $application = DB::transaction(function () use ($manifest, $payload, $appKey, $app): Application {
             $application = Application::query()->firstOrNew(['key' => $appKey]);
+
+            // L'organizzazione di un'app esistente è immutabile: un manifest NON può trasferire
+            // la proprietà cross-org (anti app-hijack). Mismatch → errore.
+            if ($application->exists && $application->organization_id !== $manifest->organization_id) {
+                throw new \RuntimeException("Il manifest non può cambiare l'organizzazione dell'app esistente \"{$appKey}\".");
+            }
+            if (!$application->exists) {
+                $application->organization_id = $manifest->organization_id;
+            }
+
             $application->fill([
-                'organization_id' => $manifest->organization_id,
                 'name' => is_string($app['name'] ?? null) ? $app['name'] : $appKey,
                 'type' => is_string($app['type'] ?? null) ? $app['type'] : 'laravel',
                 'risk_level' => is_string($app['risk_level'] ?? null) ? $app['risk_level'] : 'low',
@@ -62,6 +77,7 @@ final class ManifestApplier
         $type = is_string($app['type'] ?? null) ? $app['type'] : 'laravel';
 
         $client = OauthClient::query()->firstOrNew(['client_id' => 'cli_'.$appKey]);
+        $isNew = !$client->exists;
         $client->fill([
             'name' => is_string($app['name'] ?? null) ? $app['name'] : $appKey,
             'redirect_uris' => array_values(array_filter($this->arr($auth['redirect_uris'] ?? null), 'is_string')),
@@ -72,7 +88,22 @@ final class ManifestApplier
             'organization_id' => $organizationId,
             'application_key' => $appKey,
         ]);
+
+        // Un client confidential NUOVO ha bisogno di un secret (senza, fail-closed = inutilizzabile).
+        // Lo generiamo una sola volta; sui re-apply NON si tocca (la rotazione è un flusso a parte).
+        if ($isNew && $confidential) {
+            $plain = Str::random(48);
+            $client->secret = Hash::make($plain); // `secret` non è fillable: assegnazione diretta
+            $this->generatedSecret = $plain;
+        }
+
         $client->save();
+    }
+
+    /** Secret in chiaro del client appena creato (null se nessuno). Da consegnare/archiviare una volta. */
+    public function generatedSecret(): ?string
+    {
+        return $this->generatedSecret;
     }
 
     /**

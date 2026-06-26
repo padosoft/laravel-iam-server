@@ -6,6 +6,9 @@ namespace Padosoft\Iam;
 
 use Illuminate\Support\Facades\Route;
 use League\OAuth2\Server\AuthorizationServer;
+use Padosoft\Iam\Console\Commands\ManifestApplyCommand;
+use Padosoft\Iam\Console\Commands\ManifestRollbackCommand;
+use Padosoft\Iam\Console\Commands\ManifestValidateCommand;
 use Padosoft\Iam\Contracts\Assurance\AssuranceProvider;
 use Padosoft\Iam\Contracts\Assurance\FactorVerifier;
 use Padosoft\Iam\Contracts\Assurance\StepUpProvider;
@@ -52,8 +55,12 @@ final class IamServiceProvider extends PackageServiceProvider
     {
         $package
             ->name('laravel-iam-server')
-            ->hasConfigFile('iam');
-        // ->hasRoutes('api', 'oauth', 'auth')->hasCommands(...)  // M4+
+            ->hasConfigFile('iam')
+            ->hasCommands([
+                ManifestValidateCommand::class,
+                ManifestApplyCommand::class,
+                ManifestRollbackCommand::class,
+            ]);
     }
 
     public function packageRegistered(): void
