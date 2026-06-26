@@ -23,6 +23,11 @@ final class Membership extends Model
 
     protected $guarded = [];
 
+    /** @var array<string, mixed> */
+    protected $attributes = [
+        'status' => 'active',
+    ];
+
     protected $casts = [
         'joined_at' => 'datetime',
         'removed_at' => 'datetime',

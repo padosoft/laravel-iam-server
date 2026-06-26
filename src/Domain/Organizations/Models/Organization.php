@@ -24,6 +24,11 @@ final class Organization extends Model
 
     protected $guarded = [];
 
+    /** @var array<string, mixed> */
+    protected $attributes = [
+        'status' => 'active',
+    ];
+
     protected $casts = [
         'metadata' => 'array',
     ];

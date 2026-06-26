@@ -30,6 +30,13 @@ final class Grant extends Model
 
     protected $guarded = [];
 
+    /** @var array<string, mixed> */
+    protected $attributes = [
+        'effect' => 'permit',
+        'is_privileged' => false,
+        'activation_required' => false,
+    ];
+
     protected $casts = [
         'conditions_json' => 'array',
         'is_privileged' => 'bool',

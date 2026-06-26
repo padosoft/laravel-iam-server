@@ -25,6 +25,11 @@ final class User extends Model
 
     protected $guarded = [];
 
+    /** @var array<string, mixed> */
+    protected $attributes = [
+        'status' => 'active',
+    ];
+
     protected $casts = [
         'email_verified_at' => 'datetime',
     ];
