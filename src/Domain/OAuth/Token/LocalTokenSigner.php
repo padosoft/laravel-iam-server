@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Padosoft\Iam\Domain\OAuth\Token;
 
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Lcobucci\JWT\Encoding\ChainedFormatter;
 use Lcobucci\JWT\Encoding\JoseEncoder;
@@ -12,6 +13,7 @@ use Lcobucci\JWT\Signer\Key\InMemory;
 use Lcobucci\JWT\Token\Builder;
 use Lcobucci\JWT\Token\Parser;
 use Lcobucci\JWT\UnencryptedToken;
+use Lcobucci\JWT\Validation\Constraint\IssuedBy;
 use Lcobucci\JWT\Validation\Constraint\LooseValidAt;
 use Lcobucci\JWT\Validation\Constraint\SignedWith;
 use Lcobucci\JWT\Validation\Validator;
@@ -26,6 +28,9 @@ use Psr\Clock\ClockInterface;
  */
 final class LocalTokenSigner implements TokenSigner
 {
+    /** Lock atomico che serializza la generazione di chiavi 'active' (first-boot e rotate). */
+    private const GENERATION_LOCK = 'iam:signing-key:generate';
+
     public function __construct(
         private readonly KeyProvider $keys,
         private readonly string $issuer,
@@ -36,10 +41,9 @@ final class LocalTokenSigner implements TokenSigner
     {
         $key = $this->activeKey();
         $now = new \DateTimeImmutable;
-        $issuer = $this->issuer !== '' ? $this->issuer : 'iam';
 
         $builder = (new Builder(new JoseEncoder, ChainedFormatter::default()))
-            ->issuedBy($issuer)
+            ->issuedBy($this->effectiveIssuer())
             ->issuedAt($now)
             ->expiresAt($now->add(new \DateInterval('PT'.max(1, $ttlSeconds).'S')))
             ->identifiedBy('jti-'.bin2hex(random_bytes(16)))
@@ -102,7 +106,10 @@ final class LocalTokenSigner implements TokenSigner
             throw new \RuntimeException('PEM pubblica vuota.');
         }
 
-        // SignedWith (firma) + LooseValidAt (exp e nbf). Clock PSR-20.
+        // Firma (ES256) + validità temporale (exp/nbf) + issuer: accettiamo SOLO token emessi da NOI.
+        // L'audience NON è validata qui: il signer non conosce l'audience attesa dal singolo resource
+        // server. L'enforcement di `aud` spetta al PEP/introspection (M4b), che confronta i claim
+        // restituiti con l'identità del resource server chiamante.
         $clock = new class implements ClockInterface
         {
             public function now(): \DateTimeImmutable
@@ -114,6 +121,7 @@ final class LocalTokenSigner implements TokenSigner
             $token,
             new SignedWith(new Sha256, InMemory::plainText($pem)),
             new LooseValidAt($clock),
+            new IssuedBy($this->effectiveIssuer()),
         );
         if (!$valid) {
             throw new \RuntimeException('Token non valido (firma o validità temporale).');
@@ -139,17 +147,47 @@ final class LocalTokenSigner implements TokenSigner
 
     public function rotate(): string
     {
-        return DB::transaction(function (): string {
+        // Stesso lock di activeKey(): impedisce che rotate() e una generazione "first-boot"
+        // concorrente creino due chiavi 'active'. Multi-server → richiede uno store di lock
+        // atomico (redis/database/memcached); l'array store copre il singolo processo.
+        $kid = Cache::lock(self::GENERATION_LOCK, 10)->block(5, fn (): string => DB::transaction(function (): string {
             SigningKey::query()->where('status', 'active')->update(['status' => 'overlap', 'rotated_at' => now()]);
 
             return $this->generateKey()->kid;
-        });
+        }));
+        if (!is_string($kid)) {
+            throw new \RuntimeException('Rotazione chiave fallita.');
+        }
+
+        return $kid;
     }
 
     private function activeKey(): SigningKey
     {
-        return SigningKey::query()->where('status', 'active')->whereNull('revoked_at')->first()
-            ?? $this->generateKey();
+        $existing = $this->findActiveKey();
+        if ($existing !== null) {
+            return $existing;
+        }
+
+        // First-boot: serializza la generazione per evitare due chiavi 'active' sotto concorrenza (TOCTOU).
+        // Ricontrolla DENTRO il lock: un'altra richiesta potrebbe aver già generato la chiave.
+        $key = Cache::lock(self::GENERATION_LOCK, 10)->block(5, fn (): SigningKey => $this->findActiveKey() ?? $this->generateKey());
+        if (!$key instanceof SigningKey) {
+            throw new \RuntimeException('Generazione chiave attiva fallita.');
+        }
+
+        return $key;
+    }
+
+    private function findActiveKey(): ?SigningKey
+    {
+        return SigningKey::query()->where('status', 'active')->whereNull('revoked_at')->first();
+    }
+
+    /** @return non-empty-string */
+    private function effectiveIssuer(): string
+    {
+        return $this->issuer !== '' ? $this->issuer : 'iam';
     }
 
     private function generateKey(): SigningKey
