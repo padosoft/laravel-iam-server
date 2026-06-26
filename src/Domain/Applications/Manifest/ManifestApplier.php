@@ -77,7 +77,7 @@ final class ManifestApplier
         $type = is_string($app['type'] ?? null) ? $app['type'] : 'laravel';
 
         $client = OauthClient::query()->firstOrNew(['client_id' => 'cli_'.$appKey]);
-        $isNew = !$client->exists;
+        $hasSecret = is_string($client->secret) && $client->secret !== '';
         $client->fill([
             'name' => is_string($app['name'] ?? null) ? $app['name'] : $appKey,
             'redirect_uris' => array_values(array_filter($this->arr($auth['redirect_uris'] ?? null), 'is_string')),
@@ -89,12 +89,18 @@ final class ManifestApplier
             'application_key' => $appKey,
         ]);
 
-        // Un client confidential NUOVO ha bisogno di un secret (senza, fail-closed = inutilizzabile).
-        // Lo generiamo una sola volta; sui re-apply NON si tocca (la rotazione è un flusso a parte).
-        if ($isNew && $confidential) {
+        // Un client confidential ha bisogno di un secret (senza, fail-closed = inutilizzabile). Lo
+        // generiamo quando manca: client NUOVO oppure transizione public→confidential di uno esistente
+        // (che non aveva secret). Sui re-apply di un confidential che già ne ha uno NON si tocca
+        // (la rotazione è un flusso a parte).
+        if ($confidential && !$hasSecret) {
             $plain = Str::random(48);
             $client->secret = Hash::make($plain); // `secret` non è fillable: assegnazione diretta
             $this->generatedSecret = $plain;
+        } elseif (!$confidential && $hasSecret) {
+            // Transizione confidential→public: un client public non si autentica col secret, non
+            // deve conservarne uno (igiene di stato). Tornerà confidential → nuovo secret.
+            $client->secret = null;
         }
 
         $client->save();

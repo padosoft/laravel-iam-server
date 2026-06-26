@@ -39,7 +39,7 @@ final class ManifestRollbackCommand extends Command
             return self::FAILURE;
         }
 
-        $this->info("Rollback eseguito per \"{$appKey}\" (manifest v{$application->current_manifest_id}).");
+        $this->info("Rollback eseguito per \"{$appKey}\" (manifest applicato: {$application->current_manifest_id}).");
 
         return self::SUCCESS;
     }

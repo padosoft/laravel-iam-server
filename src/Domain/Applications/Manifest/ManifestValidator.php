@@ -13,6 +13,9 @@ final class ManifestValidator
 {
     private const RISK = ['low', 'medium', 'high', 'critical'];
 
+    /** Tipi di app riconosciuti: `service` → client_credentials, gli altri → authorization_code (doc 01 §10). */
+    private const APP_TYPES = ['laravel', 'spa', 'mobile', 'service'];
+
     /**
      * @param  array<string, mixed>  $manifest
      */
@@ -31,6 +34,11 @@ final class ManifestValidator
         }
         if (!is_string($app['name'] ?? null) || ($app['name'] ?? '') === '') {
             $errors[] = 'app.name richiesto';
+        }
+        // Tipo opzionale (default applier = laravel), ma se presente DEVE essere noto: un typo come
+        // "servcie" non deve passare e ricevere silenziosamente i grant sbagliati (fail-closed).
+        if (array_key_exists('type', $app) && !in_array($app['type'], self::APP_TYPES, true)) {
+            $errors[] = 'app.type non valido (laravel|spa|mobile|service)';
         }
         if (!in_array($app['risk_level'] ?? 'low', self::RISK, true)) {
             $errors[] = 'app.risk_level non valido (low|medium|high|critical)';
@@ -60,7 +68,7 @@ final class ManifestValidator
                 continue;
             }
             if (in_array($key, $permissionKeys, true)) {
-                $errors[] = "permissions[{$key}] è duplicato (chiavi univoche richieste)";
+                $errors[] = "permissions: key \"{$key}\" duplicata (chiavi univoche richieste)";
 
                 continue;
             }
@@ -107,11 +115,13 @@ final class ManifestValidator
             return false;
         }
         $scheme = strtolower($parts['scheme']);
-        $host = strtolower($parts['host']);
+        // L'host IPv6 può arrivare con o senza parentesi quadre a seconda della versione di PHP
+        // (es. http://[::1]/ → "[::1]" oppure "::1"): normalizziamo togliendo le parentesi.
+        $host = trim(strtolower($parts['host']), '[]');
 
         // Solo https (no javascript:/data:/http verso host arbitrari). http ammesso solo localhost (dev).
         return $scheme === 'https'
-            || ($scheme === 'http' && in_array($host, ['localhost', '127.0.0.1', '[::1]'], true));
+            || ($scheme === 'http' && in_array($host, ['localhost', '127.0.0.1', '::1'], true));
     }
 
     /**

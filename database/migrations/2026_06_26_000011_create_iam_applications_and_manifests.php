@@ -9,8 +9,8 @@ use Illuminate\Support\Facades\Schema;
 /*
  * M6 — Application Registry + Manifest engine (doc 01 §10). Ogni app si registra via manifest
  * versionato (schema laravel-iam.manifest.v2). Il manifest dichiara app+auth(client)+permissions+
- * roles+resource/scope/condition types; il lifecycle è submitted→validated→diffed→pending_approval
- * →approved→applied (reject/rolled_back/deprecated). L'app key è uno slug IMMUTABILE (ADR-0019).
+ * roles+resource/scope/condition types; il lifecycle è validated→(diff)→pending_approval|approved
+ * →applied (rejected/rolled_back). L'app key è uno slug IMMUTABILE (ADR-0019).
  */
 return new class extends Migration
 {
