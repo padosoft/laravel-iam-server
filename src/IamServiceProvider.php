@@ -6,6 +6,9 @@ namespace Padosoft\Iam;
 
 use Illuminate\Support\Facades\Route;
 use League\OAuth2\Server\AuthorizationServer;
+use Padosoft\Iam\Contracts\Assurance\AssuranceProvider;
+use Padosoft\Iam\Contracts\Assurance\FactorVerifier;
+use Padosoft\Iam\Contracts\Assurance\StepUpProvider;
 use Padosoft\Iam\Contracts\Authorization\AuthorizationEngine;
 use Padosoft\Iam\Contracts\Crypto\KeyProvider;
 use Padosoft\Iam\Contracts\Crypto\SecretCipher;
@@ -14,6 +17,9 @@ use Padosoft\Iam\Contracts\Identity\SessionRegistry;
 use Padosoft\Iam\Domain\Authorization\Pdp\NativeSqlEngine;
 use Padosoft\Iam\Domain\Crypto\LocalKeyProvider;
 use Padosoft\Iam\Domain\Crypto\LocalSecretCipher;
+use Padosoft\Iam\Domain\Identity\Assurance\NativeAssuranceProvider;
+use Padosoft\Iam\Domain\Identity\Assurance\NativeStepUpProvider;
+use Padosoft\Iam\Domain\Identity\Assurance\UnconfiguredFactorVerifier;
 use Padosoft\Iam\Domain\Identity\Session\NativeSessionRegistry;
 use Padosoft\Iam\Domain\OAuth\AuthorizationServerFactory;
 use Padosoft\Iam\Domain\OAuth\Oidc\OidcContext;
@@ -57,6 +63,12 @@ final class IamServiceProvider extends PackageServiceProvider
 
         // M5: session registry server-side (revocabile, idle/absolute timeout).
         $this->app->bind(SessionRegistry::class, NativeSessionRegistry::class);
+
+        // M5: assurance/AAL + step-up. FactorVerifier reale (Fortify/passkeys) cablato in M5.4;
+        // default fail-closed così uno step-up non riesce senza un verifier configurato.
+        $this->app->bind(AssuranceProvider::class, NativeAssuranceProvider::class);
+        $this->app->bind(StepUpProvider::class, NativeStepUpProvider::class);
+        $this->app->bind(FactorVerifier::class, UnconfiguredFactorVerifier::class);
 
         // M3: crypto (envelope encryption + crypto-shredding).
         $this->app->singleton(KeyProvider::class, fn (): LocalKeyProvider => new LocalKeyProvider($this->resolveKek()));
