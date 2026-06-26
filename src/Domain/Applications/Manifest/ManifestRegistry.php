@@ -78,6 +78,27 @@ final class ManifestRegistry
         return $diff;
     }
 
+    /** Approva un manifest in pending_approval (gate umano sui cambi sensibili). */
+    public function approve(Manifest $manifest, ?string $approvedBy = null): bool
+    {
+        if ($manifest->status !== 'pending_approval') {
+            return false;
+        }
+        $manifest->forceFill(['status' => 'approved', 'approved_by' => $approvedBy])->save();
+
+        return true;
+    }
+
+    public function reject(Manifest $manifest, ?string $approvedBy = null): bool
+    {
+        if (!in_array($manifest->status, ['pending_approval', 'validated'], true)) {
+            return false;
+        }
+        $manifest->forceFill(['status' => 'rejected', 'approved_by' => $approvedBy])->save();
+
+        return true;
+    }
+
     /**
      * @param  array<string, mixed>  $payload
      */
