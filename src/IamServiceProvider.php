@@ -14,6 +14,7 @@ use Padosoft\Iam\Domain\Authorization\Pdp\NativeSqlEngine;
 use Padosoft\Iam\Domain\Crypto\LocalKeyProvider;
 use Padosoft\Iam\Domain\Crypto\LocalSecretCipher;
 use Padosoft\Iam\Domain\OAuth\AuthorizationServerFactory;
+use Padosoft\Iam\Domain\OAuth\Oidc\OidcContext;
 use Padosoft\Iam\Domain\OAuth\Repositories\AccessTokenRepository;
 use Padosoft\Iam\Domain\OAuth\Repositories\AuthCodeRepository;
 use Padosoft\Iam\Domain\OAuth\Repositories\ClientRepository;
@@ -66,6 +67,9 @@ final class IamServiceProvider extends PackageServiceProvider
         // RefreshTokenRepository è SINGLETON: il TokenController e i grant del server devono
         // condividere la stessa istanza (stato di catena pendente, reset per-richiesta).
         $this->app->singleton(RefreshTokenRepository::class);
+        // OidcContext: trasporta nonce/auth_time nella richiesta; singleton condiviso tra
+        // AuthorizeController, ScopeRepository, AuthCodeRepository e la response type.
+        $this->app->singleton(OidcContext::class);
         $this->app->singleton(AuthorizationServer::class, fn (): AuthorizationServer => (new AuthorizationServerFactory(
             $this->app->make(ClientRepository::class),
             $this->app->make(AccessTokenRepository::class),
@@ -73,6 +77,7 @@ final class IamServiceProvider extends PackageServiceProvider
             $this->app->make(AuthCodeRepository::class),
             $this->app->make(RefreshTokenRepository::class),
             $this->app->make(TokenSigner::class),
+            $this->app->make(OidcContext::class),
             $this->resolveOauthEncryptionKey(),
             $this->oauthConfig(),
         ))->make());

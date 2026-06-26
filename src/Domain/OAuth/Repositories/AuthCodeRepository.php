@@ -10,12 +10,16 @@ use League\OAuth2\Server\Exception\UniqueTokenIdentifierConstraintViolationExcep
 use League\OAuth2\Server\Repositories\AuthCodeRepositoryInterface;
 use Padosoft\Iam\Domain\OAuth\Entities\AuthCodeEntity;
 use Padosoft\Iam\Domain\OAuth\Models\OauthAuthCode;
+use Padosoft\Iam\Domain\OAuth\Oidc\OidcContext;
 
 /**
  * Authorization code store (doc 13 §6). Single-use: dopo lo scambio league chiama revokeAuthCode.
+ * Persiste anche nonce/auth_time OIDC (impostati in /authorize) per l'id_token allo scambio.
  */
 final class AuthCodeRepository implements AuthCodeRepositoryInterface
 {
+    public function __construct(private readonly OidcContext $oidc) {}
+
     public function getNewAuthCode(): AuthCodeEntityInterface
     {
         return new AuthCodeEntity;
@@ -38,6 +42,8 @@ final class AuthCodeRepository implements AuthCodeRepositoryInterface
             'client_id' => $authCodeEntity->getClient()->getIdentifier(),
             'user_id' => $authCodeEntity->getUserIdentifier(),
             'scopes' => $scopes,
+            'nonce' => $this->oidc->nonce(),
+            'auth_time' => $this->oidc->authTime(),
             'expires_at' => $authCodeEntity->getExpiryDateTime(),
         ]);
     }

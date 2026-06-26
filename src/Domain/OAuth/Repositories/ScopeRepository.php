@@ -9,13 +9,19 @@ use League\OAuth2\Server\Entities\ScopeEntityInterface;
 use League\OAuth2\Server\Repositories\ScopeRepositoryInterface;
 use Padosoft\Iam\Domain\OAuth\Entities\ClientEntity;
 use Padosoft\Iam\Domain\OAuth\Entities\ScopeEntity;
+use Padosoft\Iam\Domain\OAuth\Models\OauthAuthCode;
 use Padosoft\Iam\Domain\OAuth\Models\OauthScope;
+use Padosoft\Iam\Domain\OAuth\Oidc\OidcContext;
 
 /**
  * Catalogo scope OAuth/OIDC (doc 13 §4): scope OIDC standard + scope dichiarati dai manifest.
+ * Punto di ripristino del contesto OIDC: `finalizeScopes` riceve l'authCodeId allo scambio e
+ * da lì recupera nonce/auth_time per l'id_token.
  */
 final class ScopeRepository implements ScopeRepositoryInterface
 {
+    public function __construct(private readonly OidcContext $oidc) {}
+
     public function getScopeEntityByIdentifier(string $identifier): ?ScopeEntityInterface
     {
         if ($identifier === '') {
@@ -40,6 +46,14 @@ final class ScopeRepository implements ScopeRepositoryInterface
         ?string $userIdentifier = null,
         ?string $authCodeId = null,
     ): array {
+        // Allo scambio dell'auth code: ripristina nonce/auth_time dell'OIDC per l'id_token.
+        if ($authCodeId !== null && $authCodeId !== '') {
+            $code = OauthAuthCode::query()->where('auth_code_id', $authCodeId)->first();
+            if ($code !== null) {
+                $this->oidc->set($code->nonce, $code->auth_time?->toDateTimeImmutable());
+            }
+        }
+
         $allowed = $clientEntity instanceof ClientEntity ? $clientEntity->allowedScopes : null;
 
         // Fail-closed: nessuno scope dichiarato → nessuno scope concesso (NON "tutti").

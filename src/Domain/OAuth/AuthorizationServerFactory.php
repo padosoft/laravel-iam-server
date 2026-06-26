@@ -11,11 +11,13 @@ use League\OAuth2\Server\Grant\AuthCodeGrant;
 use League\OAuth2\Server\Grant\ClientCredentialsGrant;
 use Padosoft\Iam\Contracts\Crypto\TokenSigner;
 use Padosoft\Iam\Domain\OAuth\Grants\IamRefreshTokenGrant;
+use Padosoft\Iam\Domain\OAuth\Oidc\OidcContext;
 use Padosoft\Iam\Domain\OAuth\Repositories\AccessTokenRepository;
 use Padosoft\Iam\Domain\OAuth\Repositories\AuthCodeRepository;
 use Padosoft\Iam\Domain\OAuth\Repositories\ClientRepository;
 use Padosoft\Iam\Domain\OAuth\Repositories\RefreshTokenRepository;
 use Padosoft\Iam\Domain\OAuth\Repositories\ScopeRepository;
+use Padosoft\Iam\Domain\OAuth\ResponseTypes\OidcBearerTokenResponse;
 
 /**
  * Costruisce l'AuthorizationServer di league cablando i nostri repository e abilitando i
@@ -34,6 +36,7 @@ final class AuthorizationServerFactory
         private readonly AuthCodeRepository $authCodes,
         private readonly RefreshTokenRepository $refreshTokens,
         private readonly TokenSigner $signer,
+        private readonly OidcContext $oidc,
         private readonly string $encryptionKey,
         private readonly array $config,
     ) {}
@@ -46,6 +49,7 @@ final class AuthorizationServerFactory
             $this->scopes,
             $this->placeholderKey(),
             $this->encryptionKey,
+            new OidcBearerTokenResponse($this->signer, $this->oidc, $this->config['access_ttl'] ?? 900),
         );
 
         $grants = $this->config['grants'] ?? [];

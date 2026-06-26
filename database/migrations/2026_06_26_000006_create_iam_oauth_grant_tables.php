@@ -21,6 +21,8 @@ return new class extends Migration
             $t->string('client_id');
             $t->string('user_id')->nullable();
             $t->json('scopes')->nullable();
+            $t->string('nonce')->nullable();             // OIDC: legato all'id_token (anti-replay)
+            $t->timestamp('auth_time')->nullable();      // OIDC: istante di autenticazione del subject
             $t->boolean('revoked')->default(false);
             $t->timestamp('expires_at')->nullable();
             $t->timestamps();

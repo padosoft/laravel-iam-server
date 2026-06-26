@@ -9,6 +9,7 @@ use League\OAuth2\Server\AuthorizationServer;
 use League\OAuth2\Server\Exception\OAuthServerException;
 use Padosoft\Iam\Domain\OAuth\Entities\ClientEntity;
 use Padosoft\Iam\Domain\OAuth\Entities\UserEntity;
+use Padosoft\Iam\Domain\OAuth\Oidc\OidcContext;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -22,10 +23,14 @@ final class AuthorizeController
 {
     use BridgesPsr7;
 
-    public function __construct(private readonly AuthorizationServer $server) {}
+    public function __construct(
+        private readonly AuthorizationServer $server,
+        private readonly OidcContext $oidc,
+    ) {}
 
     public function authorize(Request $request): Response
     {
+        $this->oidc->reset();
         $psrResponse = $this->emptyPsrResponse();
 
         try {
@@ -46,6 +51,10 @@ final class AuthorizeController
                 return response('Unauthenticated.', Response::HTTP_UNAUTHORIZED);
             }
             $authRequest->setUser(new UserEntity($subject));
+
+            // OIDC: lega nonce (anti-replay) e auth_time all'auth code, per l'id_token allo scambio.
+            $nonce = $request->query('nonce');
+            $this->oidc->set(is_string($nonce) ? $nonce : null, new \DateTimeImmutable);
 
             // Consenso: first-party → implicito; third-party → consent UI esplicita (v1.x) → negato qui.
             $client = $authRequest->getClient();
