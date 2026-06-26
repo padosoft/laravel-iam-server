@@ -48,7 +48,8 @@ final class Grant extends Model
         // 'activated_at' NON è fillable: si imposta solo via activate() (flusso PIM controllato).
         'source', 'justification', 'approval_ref',
         'is_privileged', 'activation_required', 'last_used_at',
-        'created_by', 'revoked_at', 'revoked_by',
+        'created_by',
+        // 'revoked_at'/'revoked_by' NON sono fillable: si impostano solo via revoke() (simmetrico ad activate()).
     ];
 
     /** @var array<string, mixed> */
@@ -100,6 +101,16 @@ final class Grant extends Model
     public function activate(): void
     {
         $this->forceFill(['activated_at' => now()])->save();
+    }
+
+    /**
+     * Revoca il grant — unico modo per valorizzare revoked_at/revoked_by.
+     * Simmetrico ad activate(): forceFill garantisce che il campo non sia mass-assignable.
+     * Invariante #2 (fail-closed) e #4 (audit per ogni mutazione).
+     */
+    public function revoke(string $revokedBy): void
+    {
+        $this->forceFill(['revoked_at' => now(), 'revoked_by' => $revokedBy])->save();
     }
 
     /**

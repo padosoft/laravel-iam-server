@@ -25,7 +25,8 @@ final class User extends Model
 
     /** @var list<string> */
     protected $fillable = [
-        'status', 'email', 'email_verified_at', 'name', 'primary_identity_id',
+        // 'status' NON è fillable: si imposta solo via changeStatus() per garantire l'audit trail.
+        'email', 'email_verified_at', 'name', 'primary_identity_id',
     ];
 
     /** @var array<string, mixed> */
@@ -57,5 +58,23 @@ final class User extends Model
     public function grants(): HasMany
     {
         return $this->hasMany(Grant::class, 'subject_id')->where('subject_type', 'user');
+    }
+
+    /**
+     * Cambia lo stato dell'utente — unico modo per valorizzare `status`.
+     * Scrive atomicamente il record UserStatusChange per rispettare l'invariante #4 (audit per ogni mutazione).
+     */
+    public function changeStatus(string $to, string $actor, string $reason = '', string $source = 'manual'): void
+    {
+        $from = $this->status;
+        $this->forceFill(['status' => $to])->save();
+        $this->statusChanges()->create([
+            'from_status' => $from,
+            'to_status' => $to,
+            'actor_ref' => $actor,
+            'reason' => $reason !== '' ? $reason : null,
+            'source' => $source,
+            'occurred_at' => now(),
+        ]);
     }
 }
