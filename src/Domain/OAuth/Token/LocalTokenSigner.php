@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Padosoft\Iam\Domain\OAuth\Token;
 
+use Illuminate\Support\Facades\DB;
 use Lcobucci\JWT\Encoding\ChainedFormatter;
 use Lcobucci\JWT\Encoding\JoseEncoder;
 use Lcobucci\JWT\Signer\Ecdsa\Sha256;
@@ -11,11 +12,13 @@ use Lcobucci\JWT\Signer\Key\InMemory;
 use Lcobucci\JWT\Token\Builder;
 use Lcobucci\JWT\Token\Parser;
 use Lcobucci\JWT\UnencryptedToken;
+use Lcobucci\JWT\Validation\Constraint\LooseValidAt;
 use Lcobucci\JWT\Validation\Constraint\SignedWith;
 use Lcobucci\JWT\Validation\Validator;
 use Padosoft\Iam\Contracts\Crypto\KeyProvider;
 use Padosoft\Iam\Contracts\Crypto\TokenSigner;
 use Padosoft\Iam\Domain\OAuth\Models\SigningKey;
+use Psr\Clock\ClockInterface;
 
 /**
  * Firma JWT ES256 (EC P-256) con lcobucci/jwt. La chiave privata è custodita cifrata
@@ -39,25 +42,27 @@ final class LocalTokenSigner implements TokenSigner
             ->issuedBy($issuer)
             ->issuedAt($now)
             ->expiresAt($now->add(new \DateInterval('PT'.max(1, $ttlSeconds).'S')))
-            ->identifiedBy('jti_'.bin2hex(random_bytes(8)))
+            ->identifiedBy('jti-'.bin2hex(random_bytes(16)))
             ->withHeader('kid', $key->kid);
 
         foreach ($claims as $name => $value) {
-            // iat/exp/nbf sono già impostati sopra; nomi vuoti ignorati.
-            if ($name === '' || in_array($name, ['iat', 'exp', 'nbf'], true)) {
+            // iss/jti li imposta il signer; iat/exp/nbf sono automatici → NON sovrascrivibili dal caller.
+            if ($name === '' || in_array($name, ['iss', 'jti', 'iat', 'exp', 'nbf'], true)) {
                 continue;
             }
-            if (in_array($name, ['sub', 'aud', 'iss', 'jti'], true)) {
-                $registered = $this->strVal($value);
-                if ($registered === '') {
-                    continue;
+            if ($name === 'aud') {
+                $audiences = $this->audiences($value);
+                if ($audiences !== []) {
+                    $builder = $builder->permittedFor(...$audiences);
                 }
-                $builder = match ($name) {
-                    'sub' => $builder->relatedTo($registered),
-                    'aud' => $builder->permittedFor($registered),
-                    'iss' => $builder->issuedBy($registered),
-                    default => $builder->identifiedBy($registered), // jti
-                };
+
+                continue;
+            }
+            if ($name === 'sub') {
+                $sub = $this->strVal($value);
+                if ($sub !== '') {
+                    $builder = $builder->relatedTo($sub);
+                }
 
                 continue;
             }
@@ -96,15 +101,22 @@ final class LocalTokenSigner implements TokenSigner
         if ($pem === '') {
             throw new \RuntimeException('PEM pubblica vuota.');
         }
+
+        // SignedWith (firma) + LooseValidAt (exp e nbf). Clock PSR-20.
+        $clock = new class implements ClockInterface
+        {
+            public function now(): \DateTimeImmutable
+            {
+                return new \DateTimeImmutable;
+            }
+        };
         $valid = (new Validator)->validate(
             $token,
             new SignedWith(new Sha256, InMemory::plainText($pem)),
+            new LooseValidAt($clock),
         );
         if (!$valid) {
-            throw new \RuntimeException('Firma del token non valida.');
-        }
-        if ($token->isExpired(new \DateTimeImmutable)) {
-            throw new \RuntimeException('Token scaduto.');
+            throw new \RuntimeException('Token non valido (firma o validità temporale).');
         }
 
         return $token->claims()->all();
@@ -127,9 +139,11 @@ final class LocalTokenSigner implements TokenSigner
 
     public function rotate(): string
     {
-        SigningKey::query()->where('status', 'active')->update(['status' => 'overlap', 'rotated_at' => now()]);
+        return DB::transaction(function (): string {
+            SigningKey::query()->where('status', 'active')->update(['status' => 'overlap', 'rotated_at' => now()]);
 
-        return $this->generateKey()->kid;
+            return $this->generateKey()->kid;
+        });
     }
 
     private function activeKey(): SigningKey
@@ -173,8 +187,11 @@ final class LocalTokenSigner implements TokenSigner
             'kid' => $kid,
             'alg' => 'ES256',
             'public_jwk' => [
-                'kty' => 'EC', 'crv' => 'P-256', 'use' => 'sig', 'alg' => 'ES256', 'kid' => $kid,
-                'x' => $this->b64url($x), 'y' => $this->b64url($y),
+                'kty' => 'EC', 'crv' => 'P-256', 'use' => 'sig', 'key_ops' => ['verify'],
+                'alg' => 'ES256', 'kid' => $kid,
+                // Coordinate left-padded a 32 byte (P-256): un leading-zero stripped renderebbe il JWK invalido.
+                'x' => $this->b64url($this->leftPad32($x)),
+                'y' => $this->b64url($this->leftPad32($y)),
             ],
             'public_pem' => $publicPem,
             'private_wrapped' => json_encode($this->keys->wrapDataKey($privatePem), JSON_THROW_ON_ERROR),
@@ -200,6 +217,28 @@ final class LocalTokenSigner implements TokenSigner
             'key_id' => $keyId,
             'key_version' => $keyVersion,
         ]);
+    }
+
+    /**
+     * @return list<non-empty-string>
+     */
+    private function audiences(mixed $value): array
+    {
+        $candidates = is_array($value) ? $value : [$value];
+        $out = [];
+        foreach ($candidates as $candidate) {
+            $s = $this->strVal($candidate);
+            if ($s !== '') {
+                $out[] = $s;
+            }
+        }
+
+        return $out;
+    }
+
+    private function leftPad32(string $coordinate): string
+    {
+        return str_pad($coordinate, 32, "\x00", STR_PAD_LEFT);
     }
 
     private function b64url(string $bin): string

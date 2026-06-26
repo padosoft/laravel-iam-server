@@ -40,4 +40,7 @@ final class SigningKey extends Model
         'rotated_at' => 'datetime',
         'revoked_at' => 'datetime',
     ];
+
+    /** @var list<string> Mai serializzare la chiave privata (anche se incartata). */
+    protected $hidden = ['private_wrapped'];
 }
