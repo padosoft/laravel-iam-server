@@ -45,8 +45,9 @@ final class IntrospectionController
         // (no cross-client disclosure, RFC 7662). Con aud=client_id i due check coincidono; quando
         // arriveranno i resource indicators (aud distinta) il check su aud abiliterà i resource server.
         $aud = $claims['aud'] ?? null;
+        $audList = is_array($aud) ? $aud : (is_string($aud) && $aud !== '' ? [$aud] : []); // RFC 7519: stringa o array
         $callerIsOwner = ($claims['client_id'] ?? null) === $caller;
-        $callerIsAudience = is_array($aud) && in_array($caller, $aud, true);
+        $callerIsAudience = in_array($caller, $audList, true);
         if (!$callerIsOwner && !$callerIsAudience) {
             return response()->json(['active' => false]);
         }
