@@ -46,11 +46,12 @@ final class LocalTokenSigner implements TokenSigner
             ->issuedBy($this->effectiveIssuer())
             ->issuedAt($now)
             ->expiresAt($now->add(new \DateInterval('PT'.max(1, $ttlSeconds).'S')))
-            ->identifiedBy('jti-'.bin2hex(random_bytes(16)))
+            ->identifiedBy($this->resolveJti($claims))
             ->withHeader('kid', $key->kid);
 
         foreach ($claims as $name => $value) {
-            // iss/jti li imposta il signer; iat/exp/nbf sono automatici → NON sovrascrivibili dal caller.
+            // iss e i temporali (iat/exp/nbf) li impone il signer → NON sovrascrivibili (anti-spoofing).
+            // jti è già stato risolto sopra (override consentito al caller fidato: es. id token league).
             if ($name === '' || in_array($name, ['iss', 'jti', 'iat', 'exp', 'nbf'], true)) {
                 continue;
             }
@@ -162,6 +163,16 @@ final class LocalTokenSigner implements TokenSigner
         return $kid;
     }
 
+    public function verificationPem(): string
+    {
+        $pem = $this->activeKey()->public_pem;
+        if ($pem === '') {
+            throw new \RuntimeException('PEM pubblica della chiave attiva vuota.');
+        }
+
+        return $pem;
+    }
+
     private function activeKey(): SigningKey
     {
         $existing = $this->findActiveKey();
@@ -188,6 +199,20 @@ final class LocalTokenSigner implements TokenSigner
     private function effectiveIssuer(): string
     {
         return $this->issuer !== '' ? $this->issuer : 'iam';
+    }
+
+    /**
+     * jti del token: usa quello fornito dal caller fidato (es. identifier league per
+     * introspection/revoca per jti), altrimenti ne genera uno ad alta entropia.
+     *
+     * @param  array<string, mixed>  $claims
+     * @return non-empty-string
+     */
+    private function resolveJti(array $claims): string
+    {
+        $provided = $claims['jti'] ?? null;
+
+        return is_string($provided) && $provided !== '' ? $provided : 'jti-'.bin2hex(random_bytes(16));
     }
 
     private function generateKey(): SigningKey

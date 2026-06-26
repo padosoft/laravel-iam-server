@@ -39,6 +39,23 @@ return [
         'introspection_for_critical' => true,
     ],
 
+    // M4b — motore OAuth (league/oauth2-server). Le state-machine dei grant sono di league;
+    // qui configuriamo TTL, grant abilitati e la chiave di cifratura per auth code/refresh.
+    'oauth' => [
+        'route_prefix' => 'oauth',
+        'register_routes' => true,
+        'auth_code_ttl' => 600,        // 10m
+        'require_pkce' => true,         // PKCE S256 obbligatorio per i client public (doc 13 §9)
+        'grants' => [
+            'client_credentials' => true,
+            'authorization_code' => true,
+            'refresh_token' => true,
+        ],
+        // Chiave di cifratura league (base64, 32 byte) per auth code/refresh token.
+        // Vuota in dev → derivata da APP_KEY (vedi IamServiceProvider::resolveOauthEncryptionKey).
+        'encryption_key' => env('IAM_OAUTH_ENCRYPTION_KEY'),
+    ],
+
     // M3 — Crypto/KMS (doc 11)
     'crypto' => [
         'driver' => env('IAM_KMS_DRIVER', 'local'), // local | aws | vault(v2) | azure(v2) | gcp(v2)

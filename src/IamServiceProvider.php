@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Padosoft\Iam;
 
+use Illuminate\Support\Facades\Route;
+use League\OAuth2\Server\AuthorizationServer;
 use Padosoft\Iam\Contracts\Authorization\AuthorizationEngine;
 use Padosoft\Iam\Contracts\Crypto\KeyProvider;
 use Padosoft\Iam\Contracts\Crypto\SecretCipher;
@@ -11,6 +13,10 @@ use Padosoft\Iam\Contracts\Crypto\TokenSigner;
 use Padosoft\Iam\Domain\Authorization\Pdp\NativeSqlEngine;
 use Padosoft\Iam\Domain\Crypto\LocalKeyProvider;
 use Padosoft\Iam\Domain\Crypto\LocalSecretCipher;
+use Padosoft\Iam\Domain\OAuth\AuthorizationServerFactory;
+use Padosoft\Iam\Domain\OAuth\Repositories\AccessTokenRepository;
+use Padosoft\Iam\Domain\OAuth\Repositories\ClientRepository;
+use Padosoft\Iam\Domain\OAuth\Repositories\ScopeRepository;
 use Padosoft\Iam\Domain\OAuth\Token\LocalTokenSigner;
 use Spatie\LaravelPackageTools\Package;
 use Spatie\LaravelPackageTools\PackageServiceProvider;
@@ -53,6 +59,57 @@ final class IamServiceProvider extends PackageServiceProvider
             $this->resolveIssuer(),
             $this->resolveOpensslConfig(),
         ));
+
+        // M4b: motore OAuth (league). I repository sono auto-risolti (TokenSigner è bound sopra).
+        $this->app->singleton(AuthorizationServer::class, fn (): AuthorizationServer => (new AuthorizationServerFactory(
+            $this->app->make(ClientRepository::class),
+            $this->app->make(AccessTokenRepository::class),
+            $this->app->make(ScopeRepository::class),
+            $this->app->make(TokenSigner::class),
+            $this->resolveOauthEncryptionKey(),
+            $this->oauthConfig(),
+        ))->make());
+    }
+
+    /** Chiave di cifratura league per auth code/refresh; in prod obbligatoria, in dev derivata da APP_KEY. */
+    private function resolveOauthEncryptionKey(): string
+    {
+        $configured = config('iam.oauth.encryption_key');
+        if (is_string($configured) && $configured !== '') {
+            return $configured;
+        }
+        if ($this->app->environment('production')) {
+            throw new \RuntimeException('iam.oauth.encryption_key obbligatoria in produzione: configura una chiave esplicita.');
+        }
+        $appKey = config('app.key');
+        if (!is_string($appKey) || $appKey === '') {
+            throw new \RuntimeException('APP_KEY assente: impossibile derivare la chiave di cifratura OAuth.');
+        }
+
+        return hash('sha256', 'iam-oauth|'.$appKey);
+    }
+
+    /**
+     * @return array{access_ttl: int, grants: array<string, bool>}
+     */
+    private function oauthConfig(): array
+    {
+        $access = config('iam.oauth.access_ttl', config('iam.tokens.access_ttl', 900));
+        $grants = config('iam.oauth.grants', []);
+
+        $normalizedGrants = [];
+        if (is_array($grants)) {
+            foreach ($grants as $name => $enabled) {
+                if (is_string($name)) {
+                    $normalizedGrants[$name] = (bool) $enabled;
+                }
+            }
+        }
+
+        return [
+            'access_ttl' => is_int($access) ? $access : 900,
+            'grants' => $normalizedGrants,
+        ];
     }
 
     private function resolveIssuer(): string
@@ -100,6 +157,13 @@ final class IamServiceProvider extends PackageServiceProvider
         // Il server possiede lo schema; disattivabile via config (iam.run_migrations).
         if ((bool) config('iam.run_migrations', true)) {
             $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
+        }
+
+        // M4b: rotte OAuth/OIDC sotto il prefix configurato (default /oauth).
+        if ((bool) config('iam.oauth.register_routes', true)) {
+            $prefix = config('iam.oauth.route_prefix', 'oauth');
+            Route::prefix(is_string($prefix) ? $prefix : 'oauth')
+                ->group(__DIR__.'/../routes/oauth.php');
         }
     }
 }
