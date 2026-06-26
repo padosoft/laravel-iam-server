@@ -25,7 +25,8 @@ final class IntrospectionController
 
     public function introspect(Request $request): JsonResponse
     {
-        if ($this->clientAuth->authenticate($request) === null) {
+        $caller = $this->clientAuth->authenticate($request);
+        if ($caller === null) {
             return response()->json(['error' => 'invalid_client'], 401)->header('WWW-Authenticate', 'Basic');
         }
 
@@ -37,6 +38,16 @@ final class IntrospectionController
         try {
             $claims = $this->signer->parse($token);
         } catch (\Throwable) {
+            return response()->json(['active' => false]);
+        }
+
+        // Binding chiamante↔token: il caller deve essere il client del token o nella sua audience
+        // (no cross-client disclosure, RFC 7662). Con aud=client_id i due check coincidono; quando
+        // arriveranno i resource indicators (aud distinta) il check su aud abiliterà i resource server.
+        $aud = $claims['aud'] ?? null;
+        $callerIsOwner = ($claims['client_id'] ?? null) === $caller;
+        $callerIsAudience = is_array($aud) && in_array($caller, $aud, true);
+        if (!$callerIsOwner && !$callerIsAudience) {
             return response()->json(['active' => false]);
         }
 
