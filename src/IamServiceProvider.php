@@ -170,11 +170,12 @@ final class IamServiceProvider extends PackageServiceProvider
             $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
         }
 
-        // M4b: rotte OAuth/OIDC sotto il prefix configurato (default /oauth).
+        // M4b: rotte OAuth sotto il prefix configurato (default /oauth) + metadata/OIDC a root.
         if ((bool) config('iam.oauth.register_routes', true)) {
             $prefix = config('iam.oauth.route_prefix', 'oauth');
             Route::prefix(is_string($prefix) ? $prefix : 'oauth')
                 ->group(__DIR__.'/../routes/oauth.php');
+            Route::group([], __DIR__.'/../routes/oidc.php');
         }
     }
 }

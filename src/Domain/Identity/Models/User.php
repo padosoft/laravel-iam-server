@@ -7,6 +7,7 @@ namespace Padosoft\Iam\Domain\Identity\Models;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
 use Padosoft\Iam\Domain\Authorization\Models\Grant;
 use Padosoft\Iam\Domain\Organizations\Models\Membership;
 
@@ -16,6 +17,8 @@ use Padosoft\Iam\Domain\Organizations\Models\Membership;
  * @property string $id
  * @property string $status
  * @property string|null $email
+ * @property string|null $name
+ * @property Carbon|null $email_verified_at
  */
 final class User extends Model
 {
