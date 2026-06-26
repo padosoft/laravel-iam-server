@@ -26,9 +26,9 @@ final class Application extends Model
 
     protected $table = 'iam_applications';
 
-    /** @var list<string> key è immutabile: non si cambia dopo la creazione. */
+    /** @var list<string> `status` fuori da fillable (transizioni controllate); `key` immutabile (vedi booted). */
     protected $fillable = [
-        'organization_id', 'key', 'name', 'type', 'risk_level', 'status', 'current_manifest_id',
+        'organization_id', 'key', 'name', 'type', 'risk_level', 'current_manifest_id',
     ];
 
     /** @var array<string, mixed> */
@@ -37,4 +37,18 @@ final class Application extends Model
         'risk_level' => 'low',
         'status' => 'active',
     ];
+
+    protected static function booted(): void
+    {
+        self::updating(function (Application $app): void {
+            if ($app->isDirty('key')) {
+                throw new \RuntimeException('Application.key è immutabile.');
+            }
+        });
+    }
+
+    public function changeStatus(string $status): void
+    {
+        $this->forceFill(['status' => $status])->save();
+    }
 }

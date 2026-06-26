@@ -23,6 +23,7 @@ final readonly class ValidationResult
     /** @param list<string> $errors */
     public static function fail(array $errors): self
     {
-        return new self($errors === [], array_values($errors));
+        // fail() è SEMPRE invalido (anche con lista vuota): evita falsi "validated".
+        return new self(false, array_values($errors));
     }
 }

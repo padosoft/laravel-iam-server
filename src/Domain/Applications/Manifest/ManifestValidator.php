@@ -59,6 +59,11 @@ final class ManifestValidator
 
                 continue;
             }
+            if (in_array($key, $permissionKeys, true)) {
+                $errors[] = "permissions[{$key}] è duplicato (chiavi univoche richieste)";
+
+                continue;
+            }
             $permissionKeys[] = $key;
             if (!in_array($perm['risk'] ?? 'low', self::RISK, true)) {
                 $errors[] = "permissions[{$key}].risk non valido";
@@ -94,9 +99,19 @@ final class ManifestValidator
 
     private function isValidRedirect(mixed $uri): bool
     {
-        return is_string($uri)
-            && !str_contains($uri, '*')
-            && filter_var($uri, FILTER_VALIDATE_URL) !== false;
+        if (!is_string($uri) || str_contains($uri, '*')) {
+            return false;
+        }
+        $parts = parse_url($uri);
+        if (!is_array($parts) || !isset($parts['scheme'], $parts['host'])) {
+            return false;
+        }
+        $scheme = strtolower($parts['scheme']);
+        $host = strtolower($parts['host']);
+
+        // Solo https (no javascript:/data:/http verso host arbitrari). http ammesso solo localhost (dev).
+        return $scheme === 'https'
+            || ($scheme === 'http' && in_array($host, ['localhost', '127.0.0.1', '[::1]'], true));
     }
 
     /**

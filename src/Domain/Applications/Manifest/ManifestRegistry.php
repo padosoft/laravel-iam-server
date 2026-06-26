@@ -12,7 +12,10 @@ use Padosoft\Iam\Domain\Applications\Models\Manifest;
  */
 final class ManifestRegistry
 {
-    public function __construct(private readonly ManifestValidator $validator) {}
+    public function __construct(
+        private readonly ManifestValidator $validator,
+        private readonly ManifestDiffer $differ,
+    ) {}
 
     /**
      * @param  array<string, mixed>  $payload
@@ -32,7 +35,9 @@ final class ManifestRegistry
             'submitted_by' => $submittedBy,
         ]);
 
-        $this->validate($manifest);
+        if ($this->validate($manifest)->valid) {
+            $this->diff($manifest);
+        }
 
         return $manifest;
     }
@@ -46,6 +51,29 @@ final class ManifestRegistry
         ])->save();
 
         return $result;
+    }
+
+    /**
+     * Calcola il diff vs lo stato applicato e porta il manifest a pending_approval (se un gate
+     * lo richiede) o approved (change additivi a basso rischio). No-op se il manifest è rejected.
+     *
+     * @return array<string, mixed>
+     */
+    public function diff(Manifest $manifest): array
+    {
+        if ($manifest->status === 'rejected') {
+            return [];
+        }
+
+        $diff = $this->differ->diff($manifest);
+        $requiresApproval = ($diff['requires_approval'] ?? false) === true;
+        $manifest->forceFill([
+            'diff' => $diff,
+            'requires_approval' => $requiresApproval,
+            'status' => $requiresApproval ? 'pending_approval' : 'approved',
+        ])->save();
+
+        return $diff;
     }
 
     /**
