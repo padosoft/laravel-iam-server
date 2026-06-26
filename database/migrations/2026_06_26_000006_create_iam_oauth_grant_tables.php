@@ -1,0 +1,48 @@
+<?php
+
+declare(strict_types=1);
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+/*
+ * M4b — Tabelle di supporto ai grant Authorization Code + Refresh Token (doc 13 §6).
+ * league gestisce la state-machine; qui persistiamo solo gli identificativi per
+ * revoca e (M4b.3) replay detection sui refresh token.
+ */
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('iam_oauth_auth_codes', function (Blueprint $t): void {
+            $t->ulid('id')->primary();
+            $t->string('auth_code_id')->unique();        // identificativo league del code
+            $t->string('client_id');
+            $t->string('user_id')->nullable();
+            $t->json('scopes')->nullable();
+            $t->boolean('revoked')->default(false);
+            $t->timestamp('expires_at')->nullable();
+            $t->timestamps();
+
+            $t->index('client_id');
+        });
+
+        Schema::create('iam_oauth_refresh_tokens', function (Blueprint $t): void {
+            $t->ulid('id')->primary();
+            $t->string('refresh_token_id')->unique();    // identificativo league del refresh token
+            $t->string('access_token_jti');              // access token associato (revoca a cascata)
+            $t->boolean('revoked')->default(false);
+            $t->timestamp('expires_at')->nullable();
+            $t->timestamps();
+
+            $t->index('access_token_jti');
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('iam_oauth_refresh_tokens');
+        Schema::dropIfExists('iam_oauth_auth_codes');
+    }
+};

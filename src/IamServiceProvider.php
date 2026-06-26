@@ -15,7 +15,9 @@ use Padosoft\Iam\Domain\Crypto\LocalKeyProvider;
 use Padosoft\Iam\Domain\Crypto\LocalSecretCipher;
 use Padosoft\Iam\Domain\OAuth\AuthorizationServerFactory;
 use Padosoft\Iam\Domain\OAuth\Repositories\AccessTokenRepository;
+use Padosoft\Iam\Domain\OAuth\Repositories\AuthCodeRepository;
 use Padosoft\Iam\Domain\OAuth\Repositories\ClientRepository;
+use Padosoft\Iam\Domain\OAuth\Repositories\RefreshTokenRepository;
 use Padosoft\Iam\Domain\OAuth\Repositories\ScopeRepository;
 use Padosoft\Iam\Domain\OAuth\Token\LocalTokenSigner;
 use Spatie\LaravelPackageTools\Package;
@@ -65,6 +67,8 @@ final class IamServiceProvider extends PackageServiceProvider
             $this->app->make(ClientRepository::class),
             $this->app->make(AccessTokenRepository::class),
             $this->app->make(ScopeRepository::class),
+            $this->app->make(AuthCodeRepository::class),
+            $this->app->make(RefreshTokenRepository::class),
             $this->app->make(TokenSigner::class),
             $this->resolveOauthEncryptionKey(),
             $this->oauthConfig(),
@@ -90,11 +94,13 @@ final class IamServiceProvider extends PackageServiceProvider
     }
 
     /**
-     * @return array{access_ttl: int, grants: array<string, bool>}
+     * @return array{access_ttl: int, auth_code_ttl: int, refresh_ttl: int, grants: array<string, bool>}
      */
     private function oauthConfig(): array
     {
         $access = config('iam.oauth.access_ttl', config('iam.tokens.access_ttl', 900));
+        $authCode = config('iam.oauth.auth_code_ttl', 600);
+        $refresh = config('iam.tokens.refresh_ttl', 1209600);
         $grants = config('iam.oauth.grants', []);
 
         $normalizedGrants = [];
@@ -108,6 +114,8 @@ final class IamServiceProvider extends PackageServiceProvider
 
         return [
             'access_ttl' => is_int($access) ? $access : 900,
+            'auth_code_ttl' => is_int($authCode) ? $authCode : 600,
+            'refresh_ttl' => is_int($refresh) ? $refresh : 1209600,
             'grants' => $normalizedGrants,
         ];
     }

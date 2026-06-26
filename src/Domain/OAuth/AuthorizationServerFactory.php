@@ -7,10 +7,13 @@ namespace Padosoft\Iam\Domain\OAuth;
 use DateInterval;
 use League\OAuth2\Server\AuthorizationServer;
 use League\OAuth2\Server\CryptKey;
+use League\OAuth2\Server\Grant\AuthCodeGrant;
 use League\OAuth2\Server\Grant\ClientCredentialsGrant;
 use Padosoft\Iam\Contracts\Crypto\TokenSigner;
 use Padosoft\Iam\Domain\OAuth\Repositories\AccessTokenRepository;
+use Padosoft\Iam\Domain\OAuth\Repositories\AuthCodeRepository;
 use Padosoft\Iam\Domain\OAuth\Repositories\ClientRepository;
+use Padosoft\Iam\Domain\OAuth\Repositories\RefreshTokenRepository;
 use Padosoft\Iam\Domain\OAuth\Repositories\ScopeRepository;
 
 /**
@@ -21,12 +24,14 @@ use Padosoft\Iam\Domain\OAuth\Repositories\ScopeRepository;
 final class AuthorizationServerFactory
 {
     /**
-     * @param  array{access_ttl?: int, grants?: array<string, bool>}  $config
+     * @param  array{access_ttl?: int, auth_code_ttl?: int, refresh_ttl?: int, grants?: array<string, bool>}  $config
      */
     public function __construct(
         private readonly ClientRepository $clients,
         private readonly AccessTokenRepository $accessTokens,
         private readonly ScopeRepository $scopes,
+        private readonly AuthCodeRepository $authCodes,
+        private readonly RefreshTokenRepository $refreshTokens,
         private readonly TokenSigner $signer,
         private readonly string $encryptionKey,
         private readonly array $config,
@@ -46,7 +51,13 @@ final class AuthorizationServerFactory
         if (($grants['client_credentials'] ?? false) === true) {
             $server->enableGrantType(new ClientCredentialsGrant, $this->accessTtl());
         }
-        // authorization_code + refresh_token → slice M4b.2 / M4b.3.
+        if (($grants['authorization_code'] ?? false) === true) {
+            // PKCE resta obbligatorio per i client public (default league); il refresh token
+            // viene emesso nello scambio del code (il grant refresh_token è abilitato in M4b.3).
+            $authCode = new AuthCodeGrant($this->authCodes, $this->refreshTokens, $this->authCodeTtl());
+            $authCode->setRefreshTokenTTL($this->refreshTtl());
+            $server->enableGrantType($authCode, $this->accessTtl());
+        }
 
         return $server;
     }
@@ -63,8 +74,16 @@ final class AuthorizationServerFactory
 
     private function accessTtl(): DateInterval
     {
-        $seconds = $this->config['access_ttl'] ?? 900;
+        return new DateInterval('PT'.max(1, $this->config['access_ttl'] ?? 900).'S');
+    }
 
-        return new DateInterval('PT'.max(1, $seconds).'S');
+    private function authCodeTtl(): DateInterval
+    {
+        return new DateInterval('PT'.max(1, $this->config['auth_code_ttl'] ?? 600).'S');
+    }
+
+    private function refreshTtl(): DateInterval
+    {
+        return new DateInterval('PT'.max(1, $this->config['refresh_ttl'] ?? 1209600).'S');
     }
 }

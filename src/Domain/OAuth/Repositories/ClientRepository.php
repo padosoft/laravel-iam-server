@@ -88,6 +88,7 @@ final class ClientRepository implements ClientRepositoryInterface
             $client->organization_id,
             $organizationKey,
             $client->scopes,
+            $client->is_first_party,
         );
     }
 }

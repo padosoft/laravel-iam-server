@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Illuminate\Support\Facades\Route;
+use Padosoft\Iam\Http\Controllers\OAuth\AuthorizeController;
 use Padosoft\Iam\Http\Controllers\OAuth\TokenController;
 
 /*
@@ -12,4 +13,5 @@ use Padosoft\Iam\Http\Controllers\OAuth\TokenController;
  *  - M4b.2: GET /authorize (authorization_code + PKCE)
  *  - M4b.5: POST /introspect, POST /revoke
  */
+Route::get('authorize', [AuthorizeController::class, 'authorize'])->name('iam.oauth.authorize');
 Route::post('token', [TokenController::class, 'token'])->name('iam.oauth.token');

@@ -4,12 +4,9 @@ declare(strict_types=1);
 
 namespace Padosoft\Iam\Http\Controllers\OAuth;
 
-use GuzzleHttp\Psr7\HttpFactory;
 use Illuminate\Http\Request;
 use League\OAuth2\Server\AuthorizationServer;
 use League\OAuth2\Server\Exception\OAuthServerException;
-use Symfony\Bridge\PsrHttpMessage\Factory\HttpFoundationFactory;
-use Symfony\Bridge\PsrHttpMessage\Factory\PsrHttpFactory;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -21,20 +18,20 @@ use Symfony\Component\HttpFoundation\Response;
  */
 final class TokenController
 {
+    use BridgesPsr7;
+
     public function __construct(private readonly AuthorizationServer $server) {}
 
     public function token(Request $request): Response
     {
-        $psr17 = new HttpFactory;
-        $psrRequest = (new PsrHttpFactory($psr17, $psr17, $psr17, $psr17))->createRequest($request);
-        $psrResponse = $psr17->createResponse();
+        $psrResponse = $this->emptyPsrResponse();
 
         try {
-            $result = $this->server->respondToAccessTokenRequest($psrRequest, $psrResponse);
+            $result = $this->server->respondToAccessTokenRequest($this->toPsrRequest($request), $psrResponse);
         } catch (OAuthServerException $e) {
             $result = $e->generateHttpResponse($psrResponse);
         }
 
-        return (new HttpFoundationFactory)->createResponse($result);
+        return $this->toSymfonyResponse($result);
     }
 }
