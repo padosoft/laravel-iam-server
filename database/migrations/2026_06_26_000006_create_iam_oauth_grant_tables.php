@@ -40,10 +40,21 @@ return new class extends Migration
             $t->index('chain_id');
             $t->index('access_token_jti');
         });
+
+        // Stato a livello di CATENA: una volta compromessa (replay rilevato), ogni token
+        // della famiglia — anche quelli emessi concorrentemente DOPO la rilevazione — è invalido.
+        // Il lock su questa riga serializza emissione e revoca, chiudendo la race "token figlio
+        // sfugge allo snapshot" (RFC 9700 §4.14.2).
+        Schema::create('iam_oauth_token_chains', function (Blueprint $t): void {
+            $t->string('chain_id')->primary();
+            $t->boolean('compromised')->default(false);
+            $t->timestamps();
+        });
     }
 
     public function down(): void
     {
+        Schema::dropIfExists('iam_oauth_token_chains');
         Schema::dropIfExists('iam_oauth_refresh_tokens');
         Schema::dropIfExists('iam_oauth_auth_codes');
     }
