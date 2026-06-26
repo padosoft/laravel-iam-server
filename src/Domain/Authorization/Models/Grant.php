@@ -44,7 +44,8 @@ final class Grant extends Model
         'subject_type', 'subject_id',
         'privilege_type', 'privilege_key',
         'resource_ref', 'conditions_json', 'effect',
-        'valid_from', 'valid_until', 'activated_at',
+        'valid_from', 'valid_until',
+        // 'activated_at' NON è fillable: si imposta solo via activate() (flusso PIM controllato).
         'source', 'justification', 'approval_ref',
         'is_privileged', 'activation_required', 'last_used_at',
         'created_by', 'revoked_at', 'revoked_by',
@@ -72,16 +73,17 @@ final class Grant extends Model
     {
         // Dedup deterministico: hash dell'identità del grant → unique index (MySQL-safe).
         self::saving(function (Grant $grant): void {
-            $grant->setAttribute('identity_hash', hash('sha256', implode('|', [
-                $grant->organization_id ?? '',
-                $grant->application_key ?? '',
+            // json_encode (non implode): serializzazione non ambigua → niente separator injection.
+            $grant->setAttribute('identity_hash', hash('sha256', json_encode([
+                $grant->organization_id,
+                $grant->application_key,
                 $grant->subject_type,
                 $grant->subject_id,
                 $grant->privilege_type,
                 $grant->privilege_key,
-                $grant->resource_ref ?? '',
-                $grant->effect ?? 'permit',
-            ])));
+                $grant->resource_ref,
+                $grant->effect,
+            ], JSON_THROW_ON_ERROR)));
         });
     }
 
@@ -89,6 +91,15 @@ final class Grant extends Model
     public function organization(): BelongsTo
     {
         return $this->belongsTo(Organization::class, 'organization_id');
+    }
+
+    /**
+     * Attiva un grant PIM (activation_required) — unico modo per valorizzare activated_at.
+     * Vedi doc 14 §5 (PIM/JIT); in v2 registrerà attore/durata.
+     */
+    public function activate(): void
+    {
+        $this->forceFill(['activated_at' => now()])->save();
     }
 
     /**
