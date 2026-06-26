@@ -16,6 +16,7 @@ use Illuminate\Support\Carbon;
  * @property string $user_id
  * @property string|null $organization_id
  * @property string $aal
+ * @property int $idle_timeout
  * @property Carbon $last_activity_at
  * @property Carbon $absolute_expires_at
  * @property Carbon|null $step_up_at
@@ -28,9 +29,12 @@ final class Session extends Model
 
     protected $table = 'iam_sessions';
 
-    /** @var list<string> */
+    /**
+     * @var list<string> last_activity_at/absolute_expires_at sono FUORI da fillable: i timeout
+     *                   (specie l'absolute, mai estendibile) li scrive solo il registry via forceFill.
+     */
     protected $fillable = [
-        'user_id', 'organization_id', 'aal', 'last_activity_at', 'absolute_expires_at',
+        'user_id', 'organization_id', 'aal', 'idle_timeout',
         'device_fingerprint_hash', 'ip_hash', 'user_agent_hash',
     ];
 

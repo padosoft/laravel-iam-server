@@ -20,16 +20,20 @@ final class NativeSessionRegistry implements SessionRegistry
     public function start(SubjectRef $subject, SessionMeta $meta): SessionRef
     {
         $now = Carbon::now();
-        $session = Session::query()->create([
+
+        // forceFill: i timeout (last_activity/absolute) sono fuori da fillable e li scrive solo qui.
+        $session = (new Session)->forceFill([
             'user_id' => $subject->id,
             'organization_id' => $meta->organizationId,
             'aal' => $meta->aal->value,
+            'idle_timeout' => max(1, $meta->idleTimeout),
             'last_activity_at' => $now,
             'absolute_expires_at' => $now->copy()->addSeconds(max(1, $meta->absoluteTimeout)),
             'device_fingerprint_hash' => $meta->deviceFingerprintHash,
             'ip_hash' => $meta->ipHash,
             'user_agent_hash' => $meta->userAgentHash,
         ]);
+        $session->save();
 
         return new SessionRef($session->id);
     }
@@ -93,14 +97,9 @@ final class NativeSessionRegistry implements SessionRegistry
             return false; // absolute timeout (mai esteso)
         }
 
-        // Idle timeout: ultima attività + finestra idle deve essere nel futuro.
-        return $session->last_activity_at->copy()->addSeconds($this->idleTimeout())->greaterThan($now);
-    }
+        // Idle timeout per-sessione: ultima attività + finestra idle deve essere nel futuro.
+        $idle = $session->idle_timeout > 0 ? $session->idle_timeout : 1800;
 
-    private function idleTimeout(): int
-    {
-        $value = config('iam.authentication.session.idle_timeout', 1800);
-
-        return is_int($value) && $value > 0 ? $value : 1800;
+        return $session->last_activity_at->copy()->addSeconds($idle)->greaterThan($now);
     }
 }

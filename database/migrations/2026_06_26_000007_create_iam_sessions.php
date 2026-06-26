@@ -20,6 +20,7 @@ return new class extends Migration
             $t->foreignUlid('user_id')->constrained('iam_users')->cascadeOnDelete();
             $t->foreignUlid('organization_id')->nullable()->constrained('iam_organizations')->nullOnDelete();
             $t->string('aal')->default('aal1');         // aal1 | aal2 | aal3
+            $t->unsignedInteger('idle_timeout');        // finestra idle (secondi), per-sessione
             $t->timestamp('last_activity_at');          // idle timeout
             $t->timestamp('absolute_expires_at');       // tetto massimo (non estendibile)
             $t->timestamp('step_up_at')->nullable();    // ultimo step-up riuscito
