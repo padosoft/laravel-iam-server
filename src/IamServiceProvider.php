@@ -27,6 +27,12 @@ final class IamServiceProvider extends PackageServiceProvider
         $package
             ->name('laravel-iam-server')
             ->hasConfigFile('iam');
-        // ->hasMigrations(...)->hasRoutes('api', 'oauth', 'auth')->hasCommands(...)  // M1+
+        // ->hasRoutes('api', 'oauth', 'auth')->hasCommands(...)  // M4+
+    }
+
+    public function packageBooted(): void
+    {
+        // M1: migration canoniche (identity, org, membership, grant)
+        $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
     }
 }

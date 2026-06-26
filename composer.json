@@ -6,23 +6,23 @@
     "require": {
         "php": "^8.3",
         "padosoft/laravel-iam-contracts": "*",
-        "spatie/laravel-package-tools": "^1.16",
-        "league/oauth2-server": "^9.0",
-        "lcobucci/jwt": "^5.0",
-        "laravel/socialite": "^5.0",
-        "laravel/fortify": "^1.0",
-        "aws/aws-sdk-php": "^3.0"
+        "spatie/laravel-package-tools": "^1.16"
     },
     "require-dev": {
-        "orchestra/testbench": "^9.0|^10.0",
+        "orchestra/testbench": "^10.0|^11.0",
         "pestphp/pest": "^3.0"
     },
     "suggest": {
-        "laravel/passkeys": "Native WebAuthn/passkey assurance (AAL2)",
-        "laravel/ai": "AI module — via padosoft/laravel-iam-ai",
-        "laravel/mcp": "MCP server — via padosoft/laravel-iam-mcp",
-        "padosoft/laravel-iam-rebel": "Assurance avanzata (step-up/SCA/bot/recovery)",
-        "directorytree/ldaprecord-laravel": "LDAP/AD — via padosoft/laravel-iam-directory"
+        "league/oauth2-server": "OAuth2 engine (aggiunto in M4)",
+        "lcobucci/jwt": "Firma JWT (M4)",
+        "laravel/socialite": "Federated login (M5)",
+        "laravel/fortify": "Auth backend nativo (M5)",
+        "laravel/passkeys": "WebAuthn/passkey, assurance AAL2 (M5)",
+        "aws/aws-sdk-php": "Driver AWS KMS/Secrets Manager (M3)",
+        "laravel/ai": "Modulo AI — padosoft/laravel-iam-ai",
+        "laravel/mcp": "MCP server — padosoft/laravel-iam-mcp",
+        "directorytree/ldaprecord-laravel": "LDAP/AD — padosoft/laravel-iam-directory",
+        "padosoft/laravel-iam-rebel": "Assurance avanzata (step-up/SCA/bot)"
     },
     "autoload": {
         "psr-4": {
