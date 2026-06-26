@@ -63,6 +63,9 @@ final class IamServiceProvider extends PackageServiceProvider
         ));
 
         // M4b: motore OAuth (league). I repository sono auto-risolti (TokenSigner è bound sopra).
+        // RefreshTokenRepository è SINGLETON: il TokenController e i grant del server devono
+        // condividere la stessa istanza (stato di catena pendente, reset per-richiesta).
+        $this->app->singleton(RefreshTokenRepository::class);
         $this->app->singleton(AuthorizationServer::class, fn (): AuthorizationServer => (new AuthorizationServerFactory(
             $this->app->make(ClientRepository::class),
             $this->app->make(AccessTokenRepository::class),

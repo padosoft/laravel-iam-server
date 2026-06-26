@@ -32,19 +32,28 @@ final class IamRefreshTokenGrant extends RefreshTokenGrant
 
         $refreshTokenId = $this->peekRefreshTokenId($request);
         if ($refreshTokenId !== null && $this->iamRefreshTokens->isRefreshTokenRevoked($refreshTokenId)) {
-            // Replay: refresh token già ruotato/revocato ripresentato → revoca l'intera catena.
+            // Replay esplicito: refresh token già ruotato/revocato ripresentato → revoca l'intera catena.
             $this->iamRefreshTokens->revokeChain($refreshTokenId);
 
             throw OAuthServerException::invalidRefreshToken('Refresh token reuse detected; token chain revoked.');
         }
 
         $validated = parent::validateOldRefreshToken($request, $clientId);
-
-        // Token valido: la prossima rotazione prosegue la stessa catena.
         $current = $validated['refresh_token_id'] ?? null;
-        if (is_string($current) && $current !== '') {
-            $this->iamRefreshTokens->continueChain($current);
+
+        // Claim ATOMICO (lock + check + revoca): solo una richiesta concorrente vince. Le altre
+        // (che hanno superato il check ma perdono il claim) sono replay/race → revoca catena.
+        // Chiude la TOCTOU tra il replay-check e la revoca di league (che avverrebbe troppo tardi).
+        if (!is_string($current) || $current === '' || !$this->iamRefreshTokens->claimForRotation($current)) {
+            if (is_string($current) && $current !== '') {
+                $this->iamRefreshTokens->revokeChain($current);
+            }
+
+            throw OAuthServerException::invalidRefreshToken('Refresh token reuse detected; token chain revoked.');
         }
+
+        // Token valido e claimato: la prossima rotazione prosegue la stessa catena.
+        $this->iamRefreshTokens->continueChain($current);
 
         return $validated;
     }

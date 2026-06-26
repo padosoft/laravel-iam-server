@@ -7,6 +7,7 @@ namespace Padosoft\Iam\Http\Controllers\OAuth;
 use Illuminate\Http\Request;
 use League\OAuth2\Server\AuthorizationServer;
 use League\OAuth2\Server\Exception\OAuthServerException;
+use Padosoft\Iam\Domain\OAuth\Repositories\RefreshTokenRepository;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -20,10 +21,18 @@ final class TokenController
 {
     use BridgesPsr7;
 
-    public function __construct(private readonly AuthorizationServer $server) {}
+    public function __construct(
+        private readonly AuthorizationServer $server,
+        private readonly RefreshTokenRepository $refreshTokens,
+    ) {}
 
     public function token(Request $request): Response
     {
+        // Chokepoint unico: azzera lo stato di catena pendente a inizio di OGNI richiesta token,
+        // così nessun residuo (es. un refresh fallito su un worker Octane) può legare il token
+        // di un'altra richiesta a una catena estranea. Vedi RefreshTokenRepository::$pendingChainId.
+        $this->refreshTokens->resetPendingChain();
+
         $psrResponse = $this->emptyPsrResponse();
 
         try {

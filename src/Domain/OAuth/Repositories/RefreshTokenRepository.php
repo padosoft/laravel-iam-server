@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Padosoft\Iam\Domain\OAuth\Repositories;
 
+use Illuminate\Support\Facades\DB;
 use League\OAuth2\Server\Entities\RefreshTokenEntityInterface;
 use League\OAuth2\Server\Exception\UniqueTokenIdentifierConstraintViolationException;
 use League\OAuth2\Server\Repositories\RefreshTokenRepositoryInterface;
@@ -63,7 +64,7 @@ final class RefreshTokenRepository implements RefreshTokenRepositoryInterface
         return $token === null || $token->revoked;
     }
 
-    /** Azzera lo stato di catena pendente (chiamato a inizio di ogni richiesta di refresh). */
+    /** Azzera lo stato di catena pendente (chiamato a inizio di OGNI richiesta token, vedi TokenController). */
     public function resetPendingChain(): void
     {
         $this->pendingChainId = null;
@@ -77,8 +78,30 @@ final class RefreshTokenRepository implements RefreshTokenRepositoryInterface
     }
 
     /**
+     * Claim atomico per la rotazione: transiziona il refresh token active→revoked sotto lock.
+     * Solo UNA richiesta concorrente può riuscire; le altre vedono `revoked` e ottengono false
+     * (chiude la TOCTOU tra il replay-check e la revoca di league, RFC 9700).
+     */
+    public function claimForRotation(string $refreshTokenId): bool
+    {
+        $claimed = false;
+        DB::transaction(function () use ($refreshTokenId, &$claimed): void {
+            $token = OauthRefreshToken::query()->where('refresh_token_id', $refreshTokenId)->lockForUpdate()->first();
+            if ($token === null || $token->revoked) {
+                return;
+            }
+            $token->revoked = true;
+            $token->save();
+            $claimed = true;
+        });
+
+        return $claimed;
+    }
+
+    /**
      * Replay/furto: revoca l'INTERA catena del token presentato e i relativi access token
-     * (RFC 9700 §4.14.2). Idempotente.
+     * (RFC 9700 §4.14.2). Atomico: snapshot + entrambe le update nella stessa transazione,
+     * con lock sulle righe della catena per evitare access token sfuggiti alla revoca.
      */
     public function revokeChain(string $refreshTokenId): void
     {
@@ -87,8 +110,10 @@ final class RefreshTokenRepository implements RefreshTokenRepositoryInterface
             return;
         }
 
-        $accessJtis = OauthRefreshToken::query()->where('chain_id', $chain)->pluck('access_token_jti')->all();
-        OauthRefreshToken::query()->where('chain_id', $chain)->update(['revoked' => true]);
-        OauthAccessToken::query()->whereIn('jti', $accessJtis)->update(['revoked' => true]);
+        DB::transaction(function () use ($chain): void {
+            $accessJtis = OauthRefreshToken::query()->where('chain_id', $chain)->lockForUpdate()->pluck('access_token_jti')->all();
+            OauthRefreshToken::query()->where('chain_id', $chain)->update(['revoked' => true]);
+            OauthAccessToken::query()->whereIn('jti', $accessJtis)->update(['revoked' => true]);
+        });
     }
 }
