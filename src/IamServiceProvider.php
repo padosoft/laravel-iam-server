@@ -43,6 +43,11 @@ use Padosoft\Iam\Domain\OAuth\Repositories\ClientRepository;
 use Padosoft\Iam\Domain\OAuth\Repositories\RefreshTokenRepository;
 use Padosoft\Iam\Domain\OAuth\Repositories\ScopeRepository;
 use Padosoft\Iam\Domain\OAuth\Token\LocalTokenSigner;
+use Padosoft\Iam\Http\Admin\Middleware\AdminAuthenticate;
+use Padosoft\Iam\Http\Admin\Middleware\AuthorizeIamPermission;
+use Padosoft\Iam\Http\Admin\Middleware\IdempotencyKey;
+use Padosoft\Iam\Http\Admin\Support\AdminActorResolver;
+use Padosoft\Iam\Http\Admin\Support\TokenAdminActorResolver;
 use Spatie\LaravelPackageTools\Package;
 use Spatie\LaravelPackageTools\PackageServiceProvider;
 
@@ -87,6 +92,9 @@ final class IamServiceProvider extends PackageServiceProvider
 
         // M8: primitiva FeatureScope (governance accendibile/granulare via config).
         $this->app->bind(FeatureScope::class, NativeFeatureScope::class);
+
+        // M10: Admin API — risolutore dell'attore (default: access token IAM Bearer via TokenSigner).
+        $this->app->bind(AdminActorResolver::class, TokenAdminActorResolver::class);
 
         // M8: usage capture dei grant (last_used_at). Binding `scoped` (non `singleton`): sotto
         // Octane viene resettato a ogni boundary di richiesta, così il buffer non perde tra richieste.
@@ -246,6 +254,26 @@ final class IamServiceProvider extends PackageServiceProvider
                 ->middleware($middleware)
                 ->group(__DIR__.'/../routes/oauth.php');
             Route::group([], __DIR__.'/../routes/oidc.php');
+        }
+
+        // M10: Admin API sotto /api/iam/v1 (configurabile). Autenticata + idempotente; ogni rotta
+        // dichiara il permesso col middleware `iam.can`. Disattivabile via config.
+        if ((bool) config('iam.admin.register_routes', true)) {
+            $router = $this->app->make('router');
+            $router->aliasMiddleware('iam.admin_auth', AdminAuthenticate::class);
+            $router->aliasMiddleware('iam.can', AuthorizeIamPermission::class);
+            $router->aliasMiddleware('iam.idempotency', IdempotencyKey::class);
+
+            $adminPrefix = config('iam.admin.route_prefix', 'api/iam/v1');
+            $adminRate = config('iam.admin.rate_limit', 120);
+            $adminMiddleware = ['iam.admin_auth', 'iam.idempotency'];
+            if (is_int($adminRate) && $adminRate > 0) {
+                $adminMiddleware[] = 'throttle:'.$adminRate.',1';
+            }
+
+            Route::prefix(is_string($adminPrefix) ? $adminPrefix : 'api/iam/v1')
+                ->middleware($adminMiddleware)
+                ->group(__DIR__.'/../routes/admin.php');
         }
     }
 }

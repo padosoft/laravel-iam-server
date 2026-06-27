@@ -57,6 +57,16 @@ return [
         'encryption_key' => env('IAM_OAUTH_ENCRYPTION_KEY'),
     ],
 
+    // M10 — Admin API (doc 16)
+    'admin' => [
+        'route_prefix' => 'api/iam/v1',
+        'register_routes' => true,
+        'rate_limit' => 120,            // richieste/minuto sull'Admin API (per-client+IP)
+        // Audience attesa dell'access token admin: se valorizzata, un token con `aud` diverso è
+        // rifiutato (fail-closed). Vuota = qualunque token IAM valido (utile in dev).
+        'audience' => env('IAM_ADMIN_AUDIENCE'),
+    ],
+
     // M3 — Crypto/KMS (doc 11)
     'crypto' => [
         'driver' => env('IAM_KMS_DRIVER', 'local'), // local | aws | vault(v2) | azure(v2) | gcp(v2)
