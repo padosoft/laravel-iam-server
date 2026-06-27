@@ -6,6 +6,7 @@ namespace Padosoft\Iam;
 
 use Illuminate\Support\Facades\Route;
 use League\OAuth2\Server\AuthorizationServer;
+use Padosoft\Iam\Console\Commands\AuditVerifyCommand;
 use Padosoft\Iam\Console\Commands\ManifestApplyCommand;
 use Padosoft\Iam\Console\Commands\ManifestRollbackCommand;
 use Padosoft\Iam\Console\Commands\ManifestValidateCommand;
@@ -60,6 +61,7 @@ final class IamServiceProvider extends PackageServiceProvider
                 ManifestValidateCommand::class,
                 ManifestApplyCommand::class,
                 ManifestRollbackCommand::class,
+                AuditVerifyCommand::class,
             ]);
     }
 
