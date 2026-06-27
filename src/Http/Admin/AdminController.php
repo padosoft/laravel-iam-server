@@ -79,6 +79,29 @@ abstract class AdminController
         ]);
     }
 
+    /**
+     * Esegue un'azione di dominio mappandone le eccezioni su problem+json: errori d'input
+     * (InvalidArgumentException) → 422, violazioni di stato/conflitti (RuntimeException) → 409.
+     * Così le eccezioni del dominio non emergono mai come 500 opachi.
+     *
+     * @template T
+     *
+     * @param  callable(): T  $action
+     * @return T
+     */
+    protected function runDomain(callable $action): mixed
+    {
+        try {
+            return $action();
+        } catch (ApiProblemException $e) {
+            throw $e; // già un problem+json (es. 404 da una find interna): non ri-mappare.
+        } catch (\InvalidArgumentException $e) {
+            throw ApiProblemException::unprocessable($e->getMessage());
+        } catch (\RuntimeException $e) {
+            throw ApiProblemException::conflict($e->getMessage());
+        }
+    }
+
     private function limit(Request $request): int
     {
         $raw = $request->query('limit');
