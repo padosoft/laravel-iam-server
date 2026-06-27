@@ -59,10 +59,15 @@ final class AuditChainVerifier
         // dello stream punta ancora alla coda rimossa. Confrontiamo l'ultimo hash ricalcolato (e il
         // seq) con `iam_audit_heads` → una coda mancante è rilevabile quanto un buco interno.
         $head = AuditHead::query()->find($stream);
-        if ($head !== null) {
+        if ($head === null) {
+            // Head assente ma esistono eventi → la testa è stata cancellata: fail-closed (non OK).
+            if ($checked > 0) {
+                return AuditVerificationResult::broken($checked, null, 'testa dello stream assente con eventi presenti (head cancellata)', 'head_missing');
+            }
+        } else {
             $headHash = is_string($head->hash) && $head->hash !== '' ? $head->hash : AuditHasher::GENESIS;
             if (!hash_equals($prevHash, $headHash) || $head->seq !== $checked) {
-                return AuditVerificationResult::broken($checked, null, 'coda troncata: la testa dello stream non combacia con l\'ultimo evento');
+                return AuditVerificationResult::broken($checked, null, 'coda troncata: la testa dello stream non combacia con l\'ultimo evento', 'tail_truncated');
             }
         }
 

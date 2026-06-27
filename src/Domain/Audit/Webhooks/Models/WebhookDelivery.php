@@ -10,7 +10,8 @@ use Illuminate\Support\Carbon;
 
 /**
  * Log di consegna di un webhook (doc 12 §6) — audit della consegna stessa. Unico per
- * (subscription, event_uuid) → idempotenza. `status`: pending|delivered|retrying|failed (DLQ).
+ * (subscription, event_uuid) → idempotenza. `status`: pending|sending|delivered|retrying|failed (DLQ).
+ * `sending` è lo stato transitorio del claim atomico (un crash mid-send è recuperato dal retrier).
  *
  * @property string $id
  * @property string $subscription_id

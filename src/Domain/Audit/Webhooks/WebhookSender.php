@@ -106,7 +106,7 @@ final class WebhookSender
         $base = $this->config('iam.audit.webhook_backoff_base', 10);
         $exp = $base * (2 ** max(0, $attempt - 1));
 
-        return $exp + random_int(0, $base);
+        return $exp + random_int(0, max(0, $base - 1)); // jitter in [0..base)
     }
 
     private function maxAttempts(): int

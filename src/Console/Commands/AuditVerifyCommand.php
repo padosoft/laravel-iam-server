@@ -35,7 +35,7 @@ final class AuditVerifyCommand extends Command
         }
 
         $this->error("ROTTURA RILEVATA nello stream \"{$stream}\" dopo {$result->checked} eventi.");
-        $this->line("  Primo evento compromesso: {$result->firstBrokenUuid}");
+        $this->line('  Primo evento compromesso: '.($result->firstBrokenUuid ?? 'n/a (rottura strutturale: coda/testa)'));
         $this->line("  Motivo: {$result->reason}");
 
         return self::FAILURE;

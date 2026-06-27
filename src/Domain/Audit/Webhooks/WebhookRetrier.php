@@ -18,6 +18,15 @@ final class WebhookRetrier
 
     public function retryDue(int $batch = 100): int
     {
+        // Recupero delle delivery orfane: un processo morto DOPO il claim (kill -9/OOM) lascia la
+        // riga in 'sending', che send() non ri-claima. Oltre un timeout la riportiamo a 'retrying'.
+        $timeout = config('iam.audit.webhook_sending_timeout', 300);
+        $timeout = is_int($timeout) && $timeout > 0 ? $timeout : 300;
+        WebhookDelivery::query()
+            ->where('status', 'sending')
+            ->where('updated_at', '<', now()->subSeconds($timeout))
+            ->update(['status' => 'retrying', 'next_retry_at' => now()]);
+
         $due = WebhookDelivery::query()
             ->where('status', 'retrying')
             ->whereNotNull('next_retry_at')

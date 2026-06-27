@@ -19,9 +19,16 @@ final class WebhookDispatcher
 
     public function dispatch(AuditEvent $event): void
     {
+        // Tenant isolation: un evento di un'org va SOLO alle subscription di quell'org; un evento
+        // globale (org null, es. il meta-evento subject.erased) va SOLO alle subscription globali —
+        // mai a tutte, altrimenti si fa leak cross-tenant dei dati di audit.
         $subscriptions = WebhookSubscription::query()
             ->where('status', 'active')
-            ->when($event->organization_id !== null, fn ($q) => $q->where('organization_id', $event->organization_id))
+            ->when(
+                $event->organization_id !== null,
+                fn ($q) => $q->where('organization_id', $event->organization_id),
+                fn ($q) => $q->whereNull('organization_id'),
+            )
             ->get();
 
         foreach ($subscriptions as $subscription) {

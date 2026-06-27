@@ -89,7 +89,10 @@ final class AuditEvent extends Model
             'uuid' => $this->uuid,
             'stream' => $this->stream,
             'seq' => $this->seq,
-            'occurred_at' => $this->occurred_at->utc()->format('Y-m-d\TH:i:s.u\Z'),
+            // Precisione SECONDI: la colonna `timestamp` ha precisione 0 su MySQL/Postgres → hashare
+            // i microsecondi farebbe divergere il payload dopo il reload (falso tamper). I secondi
+            // sono stabili su ogni backend; l'ordine fine è garantito da `seq`.
+            'occurred_at' => $this->occurred_at->utc()->format('Y-m-d\TH:i:s\Z'),
             'actor_user_id' => $this->actor_user_id,
             'actor_client_id' => $this->actor_client_id,
             'actor_agent_id' => $this->actor_agent_id,

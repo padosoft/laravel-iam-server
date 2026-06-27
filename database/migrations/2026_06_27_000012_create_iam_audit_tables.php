@@ -109,7 +109,7 @@ return new class extends Migration
             $t->foreignUlid('subscription_id')->constrained('iam_webhook_subscriptions')->cascadeOnDelete();
             $t->string('event_uuid')->index();
             $t->unsignedInteger('attempt')->default(0);
-            $t->string('status')->default('pending'); // pending|delivered|retrying|failed
+            $t->string('status')->default('pending'); // pending|sending|delivered|retrying|failed
             $t->unsignedSmallInteger('response_code')->nullable();
             $t->text('response_excerpt')->nullable();
             $t->text('signature')->nullable();

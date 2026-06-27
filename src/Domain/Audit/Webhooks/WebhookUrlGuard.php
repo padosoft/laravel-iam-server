@@ -34,6 +34,13 @@ final class WebhookUrlGuard
             return filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) !== false;
         }
 
+        // Forme numeriche NON canoniche (decimale "2130706433", shorthand "127.1", ottale "017",
+        // esadecimale "0x7f.1"): filter_var non le riconosce come IP, ma i resolver OS/HTTP le
+        // mappano a 127.0.0.1 ecc. → bypass SSRF. Un hostname legittimo ha sempre un segmento alfabetico.
+        if (preg_match('/^(0x[0-9a-f]+|[0-9]+)(\.(0x[0-9a-f]+|[0-9]+))*$/i', $host) === 1) {
+            return false;
+        }
+
         return true;
     }
 }
