@@ -5,7 +5,10 @@ declare(strict_types=1);
 use Illuminate\Support\Facades\Route;
 use Padosoft\Iam\Http\Admin\Controllers\AccessRequestsController;
 use Padosoft\Iam\Http\Admin\Controllers\AccessReviewsController;
+use Padosoft\Iam\Http\Admin\Controllers\ApplicationsController;
+use Padosoft\Iam\Http\Admin\Controllers\AuditController;
 use Padosoft\Iam\Http\Admin\Controllers\DecisionsController;
+use Padosoft\Iam\Http\Admin\Controllers\ManifestsController;
 use Padosoft\Iam\Http\Admin\Controllers\RecommendationsController;
 use Padosoft\Iam\Http\Admin\Controllers\SessionsController;
 use Padosoft\Iam\Http\Admin\Controllers\UsersController;
@@ -53,3 +56,20 @@ Route::post('access-requests/{accessRequest}/reject', [AccessRequestsController:
 
 // Least-privilege / anomaly recommendations (doc 16 §3, doc 14 §7)
 Route::get('recommendations/least-privilege', [RecommendationsController::class, 'leastPrivilege'])->middleware('iam.can:iam:least_privilege.view');
+
+// Applications + Manifests (doc 16 §3.5/§3.10, il moat)
+Route::get('applications', [ApplicationsController::class, 'index'])->middleware('iam.can:iam:applications.read');
+Route::get('applications/{app}', [ApplicationsController::class, 'show'])->middleware('iam.can:iam:applications.read');
+Route::get('applications/{app}/manifest', [ApplicationsController::class, 'manifest'])->middleware('iam.can:iam:applications.read');
+Route::post('applications/{app}/manifests', [ManifestsController::class, 'store'])->middleware('iam.can:iam:manifests.submit');
+Route::get('manifests', [ManifestsController::class, 'index'])->middleware('iam.can:iam:manifests.read');
+Route::get('manifests/{manifest}', [ManifestsController::class, 'show'])->middleware('iam.can:iam:manifests.read');
+Route::get('manifests/{manifest}/diff', [ManifestsController::class, 'diff'])->middleware('iam.can:iam:manifests.read');
+Route::post('manifests/{manifest}/approve', [ManifestsController::class, 'approve'])->middleware('iam.can:iam:manifests.approve');
+Route::post('manifests/{manifest}/reject', [ManifestsController::class, 'reject'])->middleware('iam.can:iam:manifests.approve');
+Route::post('manifests/{manifest}/apply', [ManifestsController::class, 'apply'])->middleware('iam.can:iam:manifests.apply');
+Route::post('manifests/{manifest}/rollback', [ManifestsController::class, 'rollback'])->middleware('iam.can:iam:manifests.apply');
+
+// Audit (doc 16 §3, doc 12) — sola lettura
+Route::get('audit/events', [AuditController::class, 'eventsIndex'])->middleware('iam.can:iam:audit.read');
+Route::post('audit/verify-chain', [AuditController::class, 'verifyChain'])->middleware('iam.can:iam:audit.read');
