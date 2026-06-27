@@ -48,6 +48,9 @@ use Padosoft\Iam\Http\Admin\Middleware\AuthorizeIamPermission;
 use Padosoft\Iam\Http\Admin\Middleware\IdempotencyKey;
 use Padosoft\Iam\Http\Admin\Support\AdminActorResolver;
 use Padosoft\Iam\Http\Admin\Support\TokenAdminActorResolver;
+use Padosoft\Iam\Observability\LogTracer;
+use Padosoft\Iam\Observability\NullTracer;
+use Padosoft\Iam\Observability\Tracer;
 use Spatie\LaravelPackageTools\Package;
 use Spatie\LaravelPackageTools\PackageServiceProvider;
 
@@ -89,6 +92,17 @@ final class IamServiceProvider extends PackageServiceProvider
     {
         // M2: PDP engine nativo (RBAC+ABAC, deny-overrides) come AuthorizationEngine.
         $this->app->bind(AuthorizationEngine::class, NativeSqlEngine::class);
+
+        // M14: telemetria. Default NullTracer (zero deps); `log` esporta span/errori su un canale
+        // strutturato per OTLP/ELK. Un'app può rimpiazzare il binding con un esportatore OTLP reale.
+        $this->app->singleton(Tracer::class, function (): Tracer {
+            if (config('iam.observability.tracer') !== 'log') {
+                return new NullTracer;
+            }
+            $channel = config('iam.observability.log_channel');
+
+            return new LogTracer($this->app->make('log')->channel(is_string($channel) && $channel !== '' ? $channel : null));
+        });
 
         // M8: primitiva FeatureScope (governance accendibile/granulare via config).
         $this->app->bind(FeatureScope::class, NativeFeatureScope::class);
@@ -274,6 +288,14 @@ final class IamServiceProvider extends PackageServiceProvider
             Route::prefix(is_string($adminPrefix) ? $adminPrefix : 'api/iam/v1')
                 ->middleware($adminMiddleware)
                 ->group(__DIR__.'/../routes/admin.php');
+        }
+
+        // M14: health/ready al medesimo prefix ma NON autenticati (liveness/readiness per
+        // orchestratore e load balancer). Registrati per ultimi, fuori dal gruppo admin.
+        if ((bool) config('iam.observability.register_health_routes', true)) {
+            $healthPrefix = config('iam.admin.route_prefix', 'api/iam/v1');
+            Route::prefix(is_string($healthPrefix) ? $healthPrefix : 'api/iam/v1')
+                ->group(__DIR__.'/../routes/health.php');
         }
     }
 }

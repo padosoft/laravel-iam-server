@@ -85,6 +85,14 @@ return [
         'export' => ['format' => 'ocsf', 'sink' => env('IAM_AUDIT_SINK')], // ELK/SIEM
     ],
 
+    // M14 — Observability / deploy base. Tracer: null (default, zero deps) | log (span/errori →
+    // canale di log strutturato, spedito a OTLP/ELK da un collector). Health/ready non autenticati.
+    'observability' => [
+        'tracer' => env('IAM_TRACER', 'null'),       // null | log
+        'log_channel' => env('IAM_TRACER_CHANNEL'),  // null = canale di default
+        'register_health_routes' => true,
+    ],
+
     // M8 — Governance / IGA (doc 14)
     'governance' => [
         'features' => [
