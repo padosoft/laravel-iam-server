@@ -32,6 +32,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $correlation_id
  * @property array<string, mixed>|null $before_json
  * @property array<string, mixed>|null $after_json
+ * @property array<string, mixed>|null $pii_encrypted
  * @property string|null $pii_dek_id
  * @property array<string, mixed>|null $metadata_json
  * @property string $prev_hash
@@ -50,7 +51,8 @@ final class AuditEvent extends Model
     protected $fillable = [
         'stream', 'occurred_at', 'actor_user_id', 'actor_client_id', 'actor_agent_id', 'actor_assurance',
         'target_type', 'target_id', 'organization_id', 'application_id', 'event_type', 'risk_level',
-        'ip_hash', 'user_agent_hash', 'correlation_id', 'before_json', 'after_json', 'pii_dek_id', 'metadata_json',
+        'ip_hash', 'user_agent_hash', 'correlation_id', 'before_json', 'after_json',
+        'pii_encrypted', 'pii_dek_id', 'metadata_json',
     ];
 
     /** @var array<string, mixed> */
@@ -64,6 +66,7 @@ final class AuditEvent extends Model
         'seq' => 'integer',
         'before_json' => 'array',
         'after_json' => 'array',
+        'pii_encrypted' => 'array',
         'metadata_json' => 'array',
     ];
 
@@ -102,6 +105,9 @@ final class AuditEvent extends Model
             'correlation_id' => $this->correlation_id,
             'before_json' => $this->before_json,
             'after_json' => $this->after_json,
+            // L'hash copre il CIPHERTEXT della PII: il crypto-shredding distrugge la DEK, non la riga,
+            // quindi questo valore NON cambia e la tamper-evidence resta valida (doc 12 §7).
+            'pii_encrypted' => $this->pii_encrypted,
             'pii_dek_id' => $this->pii_dek_id,
             'metadata_json' => $this->metadata_json,
         ];

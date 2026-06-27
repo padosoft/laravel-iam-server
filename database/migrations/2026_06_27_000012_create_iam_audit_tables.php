@@ -40,7 +40,8 @@ return new class extends Migration
 
             $t->json('before_json')->nullable();
             $t->json('after_json')->nullable();
-            $t->string('pii_dek_id')->nullable();         // FK logica alla DEK PII (crypto-shredding)
+            $t->json('pii_encrypted')->nullable();         // envelope SecretCipher della PII (per-soggetto)
+            $t->string('pii_dek_id')->nullable();          // scope della DEK PII (crypto-shredding GDPR)
             $t->json('metadata_json')->nullable();
 
             // hash-chain
@@ -118,10 +119,21 @@ return new class extends Migration
 
             $t->unique(['subscription_id', 'event_uuid']); // idempotenza: una delivery per (sub,evento)
         });
+
+        // Legal hold (doc 12 §7): sospende il crypto-shredding di un soggetto finché attivo
+        // (es. contenzioso). Senza, l'erasure GDPR cancellerebbe prove sotto obbligo di conservazione.
+        Schema::create('iam_legal_holds', function (Blueprint $t): void {
+            $t->ulid('id')->primary();
+            $t->string('subject')->index();
+            $t->string('reason');
+            $t->timestamp('placed_at');
+            $t->timestamp('released_at')->nullable();
+        });
     }
 
     public function down(): void
     {
+        Schema::dropIfExists('iam_legal_holds');
         Schema::dropIfExists('iam_webhook_deliveries');
         Schema::dropIfExists('iam_webhook_subscriptions');
         Schema::dropIfExists('iam_outbox');
