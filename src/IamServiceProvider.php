@@ -19,10 +19,12 @@ use Padosoft\Iam\Contracts\Authorization\AuthorizationEngine;
 use Padosoft\Iam\Contracts\Crypto\KeyProvider;
 use Padosoft\Iam\Contracts\Crypto\SecretCipher;
 use Padosoft\Iam\Contracts\Crypto\TokenSigner;
+use Padosoft\Iam\Contracts\Governance\FeatureScope;
 use Padosoft\Iam\Contracts\Identity\SessionRegistry;
 use Padosoft\Iam\Domain\Authorization\Pdp\NativeSqlEngine;
 use Padosoft\Iam\Domain\Crypto\LocalKeyProvider;
 use Padosoft\Iam\Domain\Crypto\LocalSecretCipher;
+use Padosoft\Iam\Domain\Governance\NativeFeatureScope;
 use Padosoft\Iam\Domain\Identity\Assurance\NativeAssuranceProvider;
 use Padosoft\Iam\Domain\Identity\Assurance\NativeStepUpProvider;
 use Padosoft\Iam\Domain\Identity\Assurance\UnconfiguredFactorVerifier;
@@ -58,7 +60,7 @@ final class IamServiceProvider extends PackageServiceProvider
     {
         $package
             ->name('laravel-iam-server')
-            ->hasConfigFile('iam')
+            ->hasConfigFile(['iam', 'iam-governance'])
             ->hasCommands([
                 ManifestValidateCommand::class,
                 ManifestApplyCommand::class,
@@ -73,6 +75,9 @@ final class IamServiceProvider extends PackageServiceProvider
     {
         // M2: PDP engine nativo (RBAC+ABAC, deny-overrides) come AuthorizationEngine.
         $this->app->bind(AuthorizationEngine::class, NativeSqlEngine::class);
+
+        // M8: primitiva FeatureScope (governance accendibile/granulare via config).
+        $this->app->bind(FeatureScope::class, NativeFeatureScope::class);
 
         // M5: session registry server-side (revocabile, idle/absolute timeout).
         $this->app->bind(SessionRegistry::class, NativeSessionRegistry::class);
