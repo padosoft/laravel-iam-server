@@ -9,6 +9,7 @@ use League\OAuth2\Server\AuthorizationServer;
 use Padosoft\Iam\Console\Commands\AuditCheckpointCommand;
 use Padosoft\Iam\Console\Commands\AuditExportCommand;
 use Padosoft\Iam\Console\Commands\AuditVerifyCommand;
+use Padosoft\Iam\Console\Commands\LeastPrivilegeScanCommand;
 use Padosoft\Iam\Console\Commands\ManifestApplyCommand;
 use Padosoft\Iam\Console\Commands\ManifestRollbackCommand;
 use Padosoft\Iam\Console\Commands\ManifestValidateCommand;
@@ -75,6 +76,7 @@ final class IamServiceProvider extends PackageServiceProvider
                 ReviewsOpenCommand::class,
                 ReviewsCloseCommand::class,
                 ReviewsRemindCommand::class,
+                LeastPrivilegeScanCommand::class,
             ]);
     }
 
