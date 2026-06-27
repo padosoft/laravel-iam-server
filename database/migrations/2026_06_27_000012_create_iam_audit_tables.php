@@ -60,10 +60,24 @@ return new class extends Migration
             $t->unsignedBigInteger('seq')->default(0);
             $t->timestamp('sealed_at')->nullable();
         });
+
+        // Checkpoint firmati (doc 12 §2.2): a intervalli si firma hash(testa) con la chiave IAM.
+        // La firma (JWT ES256 sul JWKS) impedisce a un attaccante con accesso DB di RICOSTRUIRE
+        // l'intera catena da zero: non può forgiare la firma senza la chiave privata.
+        Schema::create('iam_audit_checkpoints', function (Blueprint $t): void {
+            $t->ulid('id')->primary();
+            $t->string('stream')->index();
+            $t->unsignedBigInteger('up_to_seq');
+            $t->char('head_hash', 64);
+            $t->text('signature');                 // JWT firmato (claims: stream/seq/head_hash)
+            $t->timestamp('signed_at');
+            $t->timestamp('anchored_at')->nullable(); // push su store esterno/SIEM (v2)
+        });
     }
 
     public function down(): void
     {
+        Schema::dropIfExists('iam_audit_checkpoints');
         Schema::dropIfExists('iam_audit_heads');
         Schema::dropIfExists('iam_audit_events');
     }

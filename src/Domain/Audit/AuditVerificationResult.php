@@ -15,6 +15,7 @@ final class AuditVerificationResult
         public readonly int $checked,
         public readonly ?string $firstBrokenUuid = null,
         public readonly ?string $reason = null,
+        public readonly ?string $cause = null,
     ) {}
 
     public static function ok(int $checked): self
@@ -22,8 +23,13 @@ final class AuditVerificationResult
         return new self(true, $checked);
     }
 
-    public static function broken(int $checked, ?string $uuid, string $reason): self
+    /**
+     * `$cause` categorizza la rottura per i caller: es. 'tampered' (campo alterato), 'gap'
+     * (buco/riordino), 'tail_truncated', 'checkpoint_expired', 'checkpoint_signature_invalid'.
+     * Fail-closed in ogni caso (valid=false), ma un auditor distingue uno scaduto da un tamper.
+     */
+    public static function broken(int $checked, ?string $uuid, string $reason, ?string $cause = null): self
     {
-        return new self(false, $checked, $uuid, $reason);
+        return new self(false, $checked, $uuid, $reason, $cause);
     }
 }
