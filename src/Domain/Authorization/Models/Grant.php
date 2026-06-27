@@ -27,6 +27,9 @@ use Padosoft\Iam\Domain\Organizations\Models\Organization;
  * @property bool $is_privileged
  * @property bool $activation_required
  * @property Carbon|null $activated_at
+ * @property Carbon|null $last_used_at
+ * @property Carbon|null $revoked_at
+ * @property string|null $revoked_by
  */
 final class Grant extends Model
 {

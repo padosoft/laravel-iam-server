@@ -12,6 +12,9 @@ use Padosoft\Iam\Console\Commands\AuditVerifyCommand;
 use Padosoft\Iam\Console\Commands\ManifestApplyCommand;
 use Padosoft\Iam\Console\Commands\ManifestRollbackCommand;
 use Padosoft\Iam\Console\Commands\ManifestValidateCommand;
+use Padosoft\Iam\Console\Commands\ReviewsCloseCommand;
+use Padosoft\Iam\Console\Commands\ReviewsOpenCommand;
+use Padosoft\Iam\Console\Commands\ReviewsRemindCommand;
 use Padosoft\Iam\Contracts\Assurance\AssuranceProvider;
 use Padosoft\Iam\Contracts\Assurance\FactorVerifier;
 use Padosoft\Iam\Contracts\Assurance\StepUpProvider;
@@ -69,6 +72,9 @@ final class IamServiceProvider extends PackageServiceProvider
                 AuditVerifyCommand::class,
                 AuditCheckpointCommand::class,
                 AuditExportCommand::class,
+                ReviewsOpenCommand::class,
+                ReviewsCloseCommand::class,
+                ReviewsRemindCommand::class,
             ]);
     }
 
