@@ -1,0 +1,51 @@
+{
+  "title": "Laravel IAM — Server",
+  "description": "The self-hostable Identity & Authorization control plane: OAuth2/OIDC IdP, a RBAC+ABAC+ReBAC policy decision point, tamper-evident audit, IGA governance and an admin panel.",
+  "url": "https://padosoft.github.io/laravel-iam-server",
+  "src": "docs",
+  "out": "site",
+  "base": "/",
+  "logo": {
+    "light": "/art/banner.png",
+    "dark": "/art/banner.png",
+    "alt": "Laravel IAM"
+  },
+  "layout": {
+    "spa": true,
+    "header": { "enabled": true },
+    "sidebar": { "enabled": true, "collapsible": true, "position": "left" },
+    "footer": { "style": "minimal", "content": "MIT © Padosoft — part of the Laravel IAM ecosystem", "branding": true }
+  },
+  "optionsMenu": {
+    "position": "header",
+    "components": { "search": true, "themeSwitch": true }
+  },
+  "theme": {
+    "name": "default",
+    "appearance": "dark",
+    "customCss": []
+  },
+  "navigation": [
+    { "text": "Home", "url": "/" },
+    { "text": "Getting started", "url": "/getting-started" },
+    { "text": "Concepts", "url": "/concepts" },
+    {
+      "text": "Subsystems",
+      "items": [
+        { "text": "Policy Decision Point", "url": "/pdp" },
+        { "text": "OAuth2 & OIDC", "url": "/oauth-oidc" },
+        { "text": "Audit", "url": "/audit" },
+        { "text": "Governance / IGA", "url": "/governance" }
+      ]
+    },
+    { "text": "Admin API", "url": "/admin-api" },
+    { "text": "Admin panel", "url": "/admin-panel" },
+    { "text": "Reference", "url": "/reference" }
+  ],
+  "plugins": {
+    "search": {},
+    "seo": { "titleTemplate": "%s | Laravel IAM Server" },
+    "sitemap": { "url": "https://padosoft.github.io/laravel-iam-server" },
+    "git": { "repo": "https://github.com/padosoft/laravel-iam-server", "branch": "main", "editLink": true, "lastUpdated": true }
+  }
+}

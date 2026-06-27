@@ -1,0 +1,14 @@
+# Normalizza i line ending a LF (cross-platform, evita diff spuri su Windows)
+* text=auto eol=lf
+
+# Escludi dai tarball/zip di Packagist gli artefatti di sviluppo
+/.github         export-ignore
+/.claude         export-ignore
+/docs            export-ignore
+/tests           export-ignore
+/.gitattributes  export-ignore
+/.gitignore      export-ignore
+/CLAUDE.md       export-ignore
+/AGENTS.md       export-ignore
+/RULES.md        export-ignore
+/LESSON.md       export-ignore
