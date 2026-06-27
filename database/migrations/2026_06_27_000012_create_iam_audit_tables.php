@@ -73,10 +73,27 @@ return new class extends Migration
             $t->timestamp('signed_at');
             $t->timestamp('anchored_at')->nullable(); // push su store esterno/SIEM (v2)
         });
+
+        // Outbox transazionale (doc 12 §5): l'evento di dominio si scrive nella STESSA transazione
+        // del dato; un worker lo sigilla nella hash-chain e lo consegna (at-least-once). Lo status
+        // protegge da doppia consegna; `audit_uuid` lega il messaggio all'evento sigillato.
+        Schema::create('iam_outbox', function (Blueprint $t): void {
+            $t->ulid('id')->primary();
+            $t->string('event_type');
+            $t->string('stream')->index();
+            $t->json('payload_json');
+            $t->string('status')->default('pending')->index(); // pending | delivered | failed
+            $t->unsignedInteger('attempts')->default(0);
+            $t->text('last_error')->nullable();                // motivo dell'ultimo fallimento (ops)
+            $t->string('audit_uuid')->nullable();              // uuid dell'evento sigillato
+            $t->timestamp('created_at');
+            $t->timestamp('delivered_at')->nullable();
+        });
     }
 
     public function down(): void
     {
+        Schema::dropIfExists('iam_outbox');
         Schema::dropIfExists('iam_audit_checkpoints');
         Schema::dropIfExists('iam_audit_heads');
         Schema::dropIfExists('iam_audit_events');
