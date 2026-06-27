@@ -24,6 +24,7 @@ use Padosoft\Iam\Contracts\Identity\SessionRegistry;
 use Padosoft\Iam\Domain\Authorization\Pdp\NativeSqlEngine;
 use Padosoft\Iam\Domain\Crypto\LocalKeyProvider;
 use Padosoft\Iam\Domain\Crypto\LocalSecretCipher;
+use Padosoft\Iam\Domain\Governance\GrantUsageRecorder;
 use Padosoft\Iam\Domain\Governance\NativeFeatureScope;
 use Padosoft\Iam\Domain\Identity\Assurance\NativeAssuranceProvider;
 use Padosoft\Iam\Domain\Identity\Assurance\NativeStepUpProvider;
@@ -78,6 +79,20 @@ final class IamServiceProvider extends PackageServiceProvider
 
         // M8: primitiva FeatureScope (governance accendibile/granulare via config).
         $this->app->bind(FeatureScope::class, NativeFeatureScope::class);
+
+        // M8: usage capture dei grant (last_used_at). Binding `scoped` (non `singleton`): sotto
+        // Octane viene resettato a ogni boundary di richiesta, così il buffer non perde tra richieste.
+        // Flush batched a fine richiesta per non aggiungere una scrittura sincrona alla latenza di
+        // ogni decisione PDP. Il flush è protetto: un errore DB a fine richiesta non deve propagarsi
+        // fuori dal terminating callback (la richiesta è già servita); al massimo si perde il segnale.
+        $this->app->scoped(GrantUsageRecorder::class);
+        $this->app->terminating(function (): void {
+            try {
+                $this->app->make(GrantUsageRecorder::class)->flush();
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        });
 
         // M5: session registry server-side (revocabile, idle/absolute timeout).
         $this->app->bind(SessionRegistry::class, NativeSessionRegistry::class);

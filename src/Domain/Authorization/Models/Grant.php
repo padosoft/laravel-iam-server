@@ -48,8 +48,10 @@ final class Grant extends Model
         'valid_from', 'valid_until',
         // 'activated_at' NON è fillable: si imposta solo via activate() (flusso PIM controllato).
         'source', 'justification', 'approval_ref',
-        'is_privileged', 'activation_required', 'last_used_at',
+        'is_privileged', 'activation_required',
         'created_by',
+        // 'last_used_at' NON è fillable: lo imposta solo l'usage-capture del PDP (GrantUsageRecorder),
+        // così un grant creato a mano non può backdatare l'uso e falsare Access Review/least-privilege.
         // 'revoked_at'/'revoked_by' NON sono fillable: si impostano solo via revoke() (simmetrico ad activate()).
     ];
 

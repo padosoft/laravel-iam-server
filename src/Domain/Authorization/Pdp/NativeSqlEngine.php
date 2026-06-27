@@ -12,6 +12,7 @@ use Padosoft\Iam\Contracts\Support\SubjectRef;
 use Padosoft\Iam\Domain\Authorization\Models\Grant;
 use Padosoft\Iam\Domain\Authorization\Models\Permission;
 use Padosoft\Iam\Domain\Authorization\Models\Role;
+use Padosoft\Iam\Domain\Governance\GrantUsageRecorder;
 use Padosoft\Iam\Domain\Organizations\Models\Organization;
 
 /**
@@ -22,6 +23,7 @@ final class NativeSqlEngine implements AuthorizationEngine
 {
     public function __construct(
         private readonly ConditionEvaluator $conditions = new ConditionEvaluator,
+        private readonly ?GrantUsageRecorder $usage = null,
     ) {}
 
     public function decide(DecisionQuery $q): Decision
@@ -78,6 +80,8 @@ final class NativeSqlEngine implements AuthorizationEngine
 
         // permit (+ eventuale step-up)
         $g = $permits[0];
+        // Usage capture (doc 14 §2): segnala il grant che ha prodotto il permit → last_used_at (batch).
+        ($this->usage ?? app(GrantUsageRecorder::class))->record($g->id);
         $requiresStepUp = $this->requiresStepUp($q->permission) && !$this->aalSufficient($q->currentAal, 'aal2');
         $explain[] = "PERMIT da grant {$g->id} ({$g->privilege_type}:{$g->privilege_key}) per {$q->permission}.";
         if ($requiresStepUp) {
