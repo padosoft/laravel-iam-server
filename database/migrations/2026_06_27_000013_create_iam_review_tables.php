@@ -42,7 +42,7 @@ return new class extends Migration
             $t->json('signals_json')->nullable();            // snapshot dei segnali smart
             $t->timestamp('decided_at')->nullable();
             $t->string('decided_by')->nullable();
-            $t->string('note')->nullable();
+            $t->text('note')->nullable();
             $t->timestamps();
 
             // Un grant compare una sola volta per campagna (no doppia certificazione).

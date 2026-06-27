@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Padosoft\Iam\Domain\Governance\Reviews;
 
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Padosoft\Iam\Domain\Audit\Pii\AuditRecorder;
 use Padosoft\Iam\Domain\Authorization\Models\Grant;
 use Padosoft\Iam\Domain\Governance\Reviews\Models\ReviewCampaign;
@@ -32,8 +34,10 @@ final class CampaignEngine
      */
     public function open(ReviewCampaign $campaign): int
     {
-        if ($campaign->status === 'completed') {
-            throw new \RuntimeException("Campagna {$campaign->id} già completata: non riapribile.");
+        // Apribile solo da draft (prima apertura) o running (riapertura idempotente per aggiungere
+        // grant nuovi nello scope). Una campagna completed/expired NON si riapre (fail-closed).
+        if (!in_array($campaign->status, ['draft', 'running'], true)) {
+            throw new \RuntimeException("Campagna {$campaign->id} in stato {$campaign->status}: non apribile.");
         }
 
         $created = 0;
@@ -46,16 +50,27 @@ final class CampaignEngine
                 continue;
             }
 
-            ReviewItem::create([
+            // forceFill: reviewer_subject/signals_json sono uno snapshot non mass-assignable.
+            $item = (new ReviewItem)->forceFill([
                 'campaign_id' => $campaign->id,
                 'grant_id' => $grant->id,
                 'reviewer_subject' => $this->resolveReviewer($campaign, $grant),
                 'signals_json' => $this->signals->for($grant),
             ]);
-            $created++;
+            try {
+                $item->save();
+                $created++;
+            } catch (UniqueConstraintViolationException) {
+                // Race con un'altra apertura concorrente: l'unique (campaign_id, grant_id) ha già
+                // creato l'item → niente duplicato, niente conteggio. Idempotenza garantita dal DB.
+            }
         }
 
-        $campaign->forceFill(['status' => 'running', 'opened_at' => now()])->save();
+        // opened_at si valorizza SOLO alla prima apertura: una riapertura non sposta la data d'inizio.
+        $campaign->forceFill([
+            'status' => 'running',
+            'opened_at' => $campaign->opened_at ?? now(),
+        ])->save();
 
         return $created;
     }
@@ -66,23 +81,31 @@ final class CampaignEngine
      */
     public function decide(ReviewItem $item, string $decision, string $decidedBy, ?string $note = null): void
     {
-        if ($item->decision !== 'pending') {
-            throw new \RuntimeException("Item {$item->id} già deciso ({$item->decision}).");
-        }
         if (!in_array($decision, ['approved', 'revoked', 'delegated'], true)) {
             throw new \InvalidArgumentException("Decisione non valida: {$decision}.");
         }
 
-        if ($decision === 'revoked') {
-            $this->revokeGrant($item, $decidedBy, $note ?? 'access-review: revoca reviewer');
-        }
+        // Transazione + lock di riga: due reviewer che agiscono sullo stesso item non possono fare
+        // last-write-wins né revocare due volte; il ricontrollo `pending` avviene SOTTO il lock.
+        DB::transaction(function () use ($item, $decision, $decidedBy, $note): void {
+            $locked = ReviewItem::query()->whereKey($item->id)->lockForUpdate()->first();
+            if ($locked === null || $locked->decision !== 'pending') {
+                throw new \RuntimeException("Item {$item->id} già deciso o inesistente.");
+            }
 
-        $item->forceFill([
-            'decision' => $decision,
-            'decided_at' => now(),
-            'decided_by' => $decidedBy,
-            'note' => $note,
-        ])->save();
+            if ($decision === 'revoked') {
+                $this->revokeGrant($locked, $decidedBy, $note ?? 'access-review: revoca reviewer');
+            }
+
+            $locked->forceFill([
+                'decision' => $decision,
+                'decided_at' => now(),
+                'decided_by' => $decidedBy,
+                'note' => $note,
+            ])->save();
+        });
+
+        $item->refresh();
     }
 
     /**
@@ -94,29 +117,44 @@ final class CampaignEngine
      */
     public function close(ReviewCampaign $campaign): int
     {
+        // Chiudibile solo da running: non si chiude una draft (mai aperta) né si ri-chiude una
+        // completed (closed_at/decisioni non vanno sovrascritte → storia immutabile).
+        if ($campaign->status !== 'running') {
+            throw new \RuntimeException("Campagna {$campaign->id} in stato {$campaign->status}: non chiudibile (attesa: running).");
+        }
+
         $action = $campaign->on_unconfirmed;
         $processed = 0;
 
         /** @var Collection<int, ReviewItem> $pending */
         $pending = $campaign->items()->where('decision', 'pending')->get();
         foreach ($pending as $item) {
-            if ($action === 'keep') {
-                $item->forceFill([
-                    'decision' => 'approved',
-                    'decided_at' => now(),
-                    'decided_by' => 'system:access-review',
-                    'note' => 'on_unconfirmed=keep',
-                ])->save();
-            } else {
-                // revoke | suspend (fail-closed)
-                $this->revokeGrant($item, 'system:access-review', "on_unconfirmed={$action}");
-                $item->forceFill([
-                    'decision' => 'revoked',
-                    'decided_at' => now(),
-                    'decided_by' => 'system:access-review',
-                    'note' => "on_unconfirmed={$action}",
-                ])->save();
-            }
+            // Stessa garanzia di decide(): lock + ricontrollo pending, così un reviewer che decide
+            // mentre la campagna si chiude non viene sovrascritto (no doppia azione sul grant).
+            DB::transaction(function () use ($item, $action): void {
+                $locked = ReviewItem::query()->whereKey($item->id)->lockForUpdate()->first();
+                if ($locked === null || $locked->decision !== 'pending') {
+                    return;
+                }
+
+                if ($action === 'keep') {
+                    $locked->forceFill([
+                        'decision' => 'approved',
+                        'decided_at' => now(),
+                        'decided_by' => 'system:access-review',
+                        'note' => 'on_unconfirmed=keep',
+                    ])->save();
+                } else {
+                    // revoke | suspend (fail-closed): qualunque azione diversa da keep rimuove l'accesso.
+                    $this->revokeGrant($locked, 'system:access-review', "on_unconfirmed={$action}");
+                    $locked->forceFill([
+                        'decision' => 'revoked',
+                        'decided_at' => now(),
+                        'decided_by' => 'system:access-review',
+                        'note' => "on_unconfirmed={$action}",
+                    ])->save();
+                }
+            });
             $processed++;
         }
 
@@ -179,8 +217,12 @@ final class CampaignEngine
         $scope = $campaign->scope_json ?? [];
         $query = Grant::query()->active();
 
+        // Isolamento cross-tenant (fail-closed): una campagna di un'org certifica SOLO i grant di
+        // quell'org. I grant globali (organization_id null) valgono per tutti i tenant → li può
+        // certificare/revocare unicamente una campagna globale (organization_id null = full inventory),
+        // mai una campagna di un singolo tenant, che altrimenti danneggerebbe gli altri.
         if ($campaign->organization_id !== null) {
-            $query->where(fn (Builder $w) => $w->whereNull('organization_id')->orWhere('organization_id', $campaign->organization_id));
+            $query->where('organization_id', $campaign->organization_id);
         }
 
         $apps = $this->stringList($scope['application_keys'] ?? null);

@@ -158,11 +158,18 @@ final class ManifestApplier
             $key = $role['key'];
             $declared[] = $key;
             $model = Role::query()->firstOrNew(['full_key' => $appKey.':'.$key]);
+            // Self-service (doc 14 §4): un ruolo entra nel catalogo richiedibile SOLO se il manifest
+            // lo marca esplicitamente self_requestable; `request{}` porta visibility/approvers/durata.
+            $selfRequestable = ($role['self_requestable'] ?? false) === true;
+            $request = is_array($role['request'] ?? null) ? $role['request'] : null;
+
             $model->fill([
                 'app_key' => $appKey,
                 'key' => $key,
                 'label' => is_string($role['label'] ?? null) ? $role['label'] : null,
                 'is_privileged' => ($role['is_privileged'] ?? false) === true,
+                'self_requestable' => $selfRequestable,
+                'request_json' => $selfRequestable ? $request : null,
                 'deprecated_at' => null,
             ]);
             $model->save();

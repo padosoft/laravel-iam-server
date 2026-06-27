@@ -27,6 +27,11 @@ use Padosoft\Iam\Domain\Organizations\Models\Organization;
  * @property bool $is_privileged
  * @property bool $activation_required
  * @property Carbon|null $activated_at
+ * @property Carbon|null $valid_from
+ * @property Carbon|null $valid_until
+ * @property string|null $source
+ * @property string|null $justification
+ * @property string|null $approval_ref
  * @property Carbon|null $last_used_at
  * @property Carbon|null $revoked_at
  * @property string|null $revoked_by

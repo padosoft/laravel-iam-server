@@ -31,10 +31,15 @@ final class ReviewItem extends Model
 
     protected $table = 'iam_review_items';
 
-    /** @var list<string> */
+    /**
+     * Solo l'identità dell'item è mass-assignable. reviewer_subject/signals_json sono uno SNAPSHOT
+     * immutabile scritto dal CampaignEngine in apertura (forceFill) → non alterabile dopo la creazione;
+     * decision/decided_* idem (storia immutabile e auditabile).
+     *
+     * @var list<string>
+     */
     protected $fillable = [
-        'campaign_id', 'grant_id', 'reviewer_subject', 'signals_json',
-        // decision/decided_at/decided_by/note NON sono fillable: li scrive solo il CampaignEngine.
+        'campaign_id', 'grant_id',
     ];
 
     /** @var array<string, mixed> */
