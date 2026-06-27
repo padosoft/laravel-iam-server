@@ -1,0 +1,414 @@
+openapi: 3.1.0
+info:
+  title: Laravel IAM — Admin API
+  description: >
+    API di amministrazione del control plane Laravel IAM (doc 16). Autenticata con Bearer JWT,
+    fail-closed: ogni rotta dichiara il permesso richiesto e nega di default. Errori in formato
+    Problem Details (RFC 9457). Paginazione a cursore, tenant scoping (cross-tenant = 404
+    indistinguibile).
+
+
+    Convenzioni valide per TUTTE le rotte autenticate: senza un Bearer valido la risposta è
+    `401` Problem+JSON; senza il permesso richiesto è `403`. Le rotte di mutazione (POST) accettano
+    l'header opzionale `Idempotency-Key` (un retry con la stessa chiave non duplica l'effetto).
+  version: 1.0.0
+servers:
+  - url: /api/iam/v1
+    description: Prefix configurabile (iam.admin.route_prefix)
+security:
+  - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Problem:
+      type: object
+      description: RFC 9457 Problem Details
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        errors: { type: object, additionalProperties: true }
+    Decision:
+      type: object
+      properties:
+        allowed: { type: boolean }
+        decision_id: { type: string }
+        policy_version: { type: integer }
+        requires_step_up: { type: boolean }
+        required_aal: { type: [string, "null"] }
+        matched: { type: array, items: { type: object } }
+        explanation: { type: array, items: { type: string } }
+    CursorPage:
+      type: object
+      properties:
+        data: { type: array, items: { type: object } }
+        next_cursor: { type: [string, "null"] }
+  responses:
+    Problem:
+      description: Errore (RFC 9457)
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Unauthorized:
+      description: Bearer assente o non valido (RFC 9457)
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Forbidden:
+      description: Permesso mancante (fail-closed, RFC 9457)
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+  parameters:
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      schema: { type: string }
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema: { type: integer }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: Chiave di idempotenza per le mutazioni (un retry non duplica l'effetto)
+      schema: { type: string }
+  requestBodies:
+    DecisionQuery:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [subject, permission]
+            properties:
+              subject:
+                type: object
+                required: [id]
+                properties:
+                  type: { type: string }
+                  id: { type: string }
+              permission: { type: string }
+              organization: { type: [string, "null"] }
+              application: { type: [string, "null"] }
+              resource: { type: [string, "null"] }
+              context: { type: object, additionalProperties: true }
+              current_aal: { type: string }
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Liveness probe (non autenticato)
+      security: []
+      responses:
+        "200": { description: Il processo risponde }
+  /ready:
+    get:
+      tags: [Health]
+      summary: Readiness probe (non autenticato)
+      security: []
+      responses:
+        "200": { description: Pronto }
+        "503": { description: Non pronto }
+  /users:
+    get:
+      tags: [Users]
+      summary: Elenca gli utenti (cursor)
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CursorPage" } } } }
+        "403": { $ref: "#/components/responses/Problem" }
+  /users/{user}:
+    get:
+      tags: [Users]
+      summary: Mostra un utente
+      parameters: [{ name: user, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "404": { $ref: "#/components/responses/Problem" }
+  /users/{user}/effective-permissions:
+    get:
+      tags: [Users]
+      summary: Permessi effettivi di un utente
+      parameters: [{ name: user, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "404": { $ref: "#/components/responses/Problem" }
+  /users/{user}/suspend:
+    post:
+      tags: [Users]
+      summary: Sospende un utente
+      parameters: [{ name: user, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "404": { $ref: "#/components/responses/Problem" }
+  /users/{user}/reactivate:
+    post:
+      tags: [Users]
+      summary: Riattiva un utente
+      parameters: [{ name: user, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "404": { $ref: "#/components/responses/Problem" }
+  /users/{user}/sessions/revoke-all:
+    post:
+      tags: [Users]
+      summary: Revoca tutte le sessioni di un utente
+      parameters: [{ name: user, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "404": { $ref: "#/components/responses/Problem" }
+  /decisions/check:
+    post:
+      tags: [Decisions]
+      summary: PDP check (allow/deny)
+      requestBody: { $ref: "#/components/requestBodies/DecisionQuery" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Decision" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/Problem" }
+  /decisions/explain:
+    post:
+      tags: [Decisions]
+      summary: PDP explain (spiegazione passo-passo)
+      requestBody: { $ref: "#/components/requestBodies/DecisionQuery" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Decision" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/Problem" }
+  /decisions/list-subjects:
+    post:
+      tags: [Decisions]
+      summary: ReBAC list-subjects (v2)
+      responses:
+        "501": { $ref: "#/components/responses/Problem" }
+  /decisions/list-resources:
+    post:
+      tags: [Decisions]
+      summary: ReBAC list-resources (v2)
+      responses:
+        "501": { $ref: "#/components/responses/Problem" }
+  /sessions:
+    get:
+      tags: [Sessions]
+      summary: Elenca le sessioni
+      responses:
+        "200": { description: OK }
+        "403": { $ref: "#/components/responses/Problem" }
+  /sessions/{session}:
+    get:
+      tags: [Sessions]
+      summary: Mostra una sessione
+      parameters: [{ name: session, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "404": { $ref: "#/components/responses/Problem" }
+  /sessions/{session}/revoke:
+    post:
+      tags: [Sessions]
+      summary: Revoca una sessione
+      parameters: [{ name: session, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "404": { $ref: "#/components/responses/Problem" }
+  /access-reviews/campaigns:
+    get:
+      tags: [AccessReviews]
+      summary: Elenca le campagne di review
+      responses:
+        "200": { description: OK }
+    post:
+      tags: [AccessReviews]
+      summary: Crea una campagna di review
+      responses:
+        "201": { description: Creata }
+        "422": { $ref: "#/components/responses/Problem" }
+  /access-reviews/campaigns/{campaign}/open:
+    post:
+      tags: [AccessReviews]
+      summary: Apre una campagna
+      parameters: [{ name: campaign, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "409": { $ref: "#/components/responses/Problem" }
+  /access-reviews/campaigns/{campaign}/close:
+    post:
+      tags: [AccessReviews]
+      summary: Chiude una campagna
+      parameters: [{ name: campaign, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "409": { $ref: "#/components/responses/Problem" }
+  /access-reviews/campaigns/{campaign}/items:
+    get:
+      tags: [AccessReviews]
+      summary: Item di una campagna
+      parameters: [{ name: campaign, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+  /access-reviews/items/{item}/certify:
+    post:
+      tags: [AccessReviews]
+      summary: Certifica un item
+      parameters: [{ name: item, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "409": { $ref: "#/components/responses/Problem" }
+  /access-reviews/items/{item}/revoke:
+    post:
+      tags: [AccessReviews]
+      summary: Revoca un item (rimuove il grant)
+      parameters: [{ name: item, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "409": { $ref: "#/components/responses/Problem" }
+  /access-requests:
+    get:
+      tags: [AccessRequests]
+      summary: Elenca le richieste d'accesso
+      responses:
+        "200": { description: OK }
+    post:
+      tags: [AccessRequests]
+      summary: Crea una richiesta d'accesso
+      responses:
+        "201": { description: Creata }
+        "422": { $ref: "#/components/responses/Problem" }
+  /access-requests/catalog:
+    get:
+      tags: [AccessRequests]
+      summary: Catalogo dei ruoli richiedibili
+      responses:
+        "200": { description: OK }
+  /access-requests/{accessRequest}/approve:
+    post:
+      tags: [AccessRequests]
+      summary: Approva una richiesta (grant time-boxed)
+      parameters: [{ name: accessRequest, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "409": { $ref: "#/components/responses/Problem" }
+        "422": { $ref: "#/components/responses/Problem" }
+  /access-requests/{accessRequest}/reject:
+    post:
+      tags: [AccessRequests]
+      summary: Rifiuta una richiesta
+      parameters: [{ name: accessRequest, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "409": { $ref: "#/components/responses/Problem" }
+  /recommendations/least-privilege:
+    get:
+      tags: [Recommendations]
+      summary: Proposte least-privilege (draft-only)
+      responses:
+        "200": { description: OK }
+  /applications:
+    get:
+      tags: [Applications]
+      summary: Elenca le applicazioni del registry
+      responses:
+        "200": { description: OK }
+  /applications/{app}:
+    get:
+      tags: [Applications]
+      summary: Mostra un'applicazione
+      parameters: [{ name: app, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "404": { $ref: "#/components/responses/Problem" }
+  /applications/{app}/manifest:
+    get:
+      tags: [Applications]
+      summary: Manifest corrente applicato
+      parameters: [{ name: app, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "404": { $ref: "#/components/responses/Problem" }
+  /applications/{app}/manifests:
+    post:
+      tags: [Applications]
+      summary: Sottomette un manifest per un'app
+      parameters: [{ name: app, in: path, required: true, schema: { type: string } }]
+      responses:
+        "201": { description: Creato }
+        "422": { $ref: "#/components/responses/Problem" }
+  /manifests:
+    get:
+      tags: [Manifests]
+      summary: Elenca i manifest
+      responses:
+        "200": { description: OK }
+  /manifests/{manifest}:
+    get:
+      tags: [Manifests]
+      summary: Mostra un manifest
+      parameters: [{ name: manifest, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "404": { $ref: "#/components/responses/Problem" }
+  /manifests/{manifest}/diff:
+    get:
+      tags: [Manifests]
+      summary: Diff del manifest vs stato corrente
+      parameters: [{ name: manifest, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+  /manifests/{manifest}/approve:
+    post:
+      tags: [Manifests]
+      summary: Approva un manifest
+      parameters: [{ name: manifest, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "409": { $ref: "#/components/responses/Problem" }
+  /manifests/{manifest}/reject:
+    post:
+      tags: [Manifests]
+      summary: Rifiuta un manifest
+      parameters: [{ name: manifest, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "409": { $ref: "#/components/responses/Problem" }
+  /manifests/{manifest}/apply:
+    post:
+      tags: [Manifests]
+      summary: Applica un manifest approvato
+      parameters: [{ name: manifest, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "409": { $ref: "#/components/responses/Problem" }
+  /manifests/{manifest}/rollback:
+    post:
+      tags: [Manifests]
+      summary: Rollback all'ultimo manifest applicato
+      parameters: [{ name: manifest, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "409": { $ref: "#/components/responses/Problem" }
+  /audit/events:
+    get:
+      tags: [Audit]
+      summary: Elenca gli eventi di audit (cursor)
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200": { description: OK }
+  /audit/verify-chain:
+    post:
+      tags: [Audit]
+      summary: Verifica la hash-chain di audit (tamper-evidence)
+      responses:
+        "200": { description: OK }
