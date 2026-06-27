@@ -89,10 +89,41 @@ return new class extends Migration
             $t->timestamp('created_at');
             $t->timestamp('delivered_at')->nullable();
         });
+
+        // Webhooks (doc 12 §6): subscription per-org con filtri sugli event_type; secret cifrato
+        // (envelope) per la firma HMAC. Le delivery sono loggate (audit della consegna stessa) con
+        // retry/backoff e DLQ (status=failed) dopo la soglia.
+        Schema::create('iam_webhook_subscriptions', function (Blueprint $t): void {
+            $t->ulid('id')->primary();
+            $t->string('organization_id')->nullable()->index();
+            $t->string('url');
+            $t->json('secret_encrypted');          // envelope SecretCipher
+            $t->json('event_filters');             // es. ["grant.*","policy.approved"]
+            $t->string('status')->default('active'); // active | disabled
+            $t->timestamps();
+        });
+
+        Schema::create('iam_webhook_deliveries', function (Blueprint $t): void {
+            $t->ulid('id')->primary();
+            $t->foreignUlid('subscription_id')->constrained('iam_webhook_subscriptions')->cascadeOnDelete();
+            $t->string('event_uuid')->index();
+            $t->unsignedInteger('attempt')->default(0);
+            $t->string('status')->default('pending'); // pending|delivered|retrying|failed
+            $t->unsignedSmallInteger('response_code')->nullable();
+            $t->text('response_excerpt')->nullable();
+            $t->text('signature')->nullable();
+            $t->timestamp('next_retry_at')->nullable()->index();
+            $t->timestamp('delivered_at')->nullable();
+            $t->timestamps();
+
+            $t->unique(['subscription_id', 'event_uuid']); // idempotenza: una delivery per (sub,evento)
+        });
     }
 
     public function down(): void
     {
+        Schema::dropIfExists('iam_webhook_deliveries');
+        Schema::dropIfExists('iam_webhook_subscriptions');
         Schema::dropIfExists('iam_outbox');
         Schema::dropIfExists('iam_audit_checkpoints');
         Schema::dropIfExists('iam_audit_heads');
