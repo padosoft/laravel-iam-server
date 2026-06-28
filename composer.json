@@ -5,7 +5,7 @@
     "license": "MIT",
     "require": {
         "php": "^8.3",
-        "padosoft/laravel-iam-contracts": "*",
+        "padosoft/laravel-iam-contracts": "^1.0",
         "spatie/laravel-package-tools": "^1.16",
         "lcobucci/jwt": "^5.0",
         "league/oauth2-server": "^9.0",
