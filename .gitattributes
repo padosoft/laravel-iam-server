@@ -12,3 +12,8 @@
 /AGENTS.md       export-ignore
 /RULES.md        export-ignore
 /LESSON.md       export-ignore
+/phpunit.xml.dist export-ignore
+/phpstan.neon.dist export-ignore
+/pint.json       export-ignore
+/composer.lock   export-ignore
+/docmd.config.json export-ignore
