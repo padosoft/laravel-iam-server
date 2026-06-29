@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Padosoft\Iam\Contracts\Support\SubjectRef;
+use Padosoft\Iam\Domain\Audit\Models\AuditEvent;
 use Padosoft\Iam\Domain\Authorization\Models\Grant;
 use Padosoft\Iam\Domain\Authorization\Models\Permission;
 use Padosoft\Iam\Domain\Authorization\Models\Relation;
@@ -209,6 +210,30 @@ it('bounded: oltre MAX_DEPTH la gerarchia non propaga (fail-closed)', function (
 });
 
 // --- RelationWriter ---
+
+it('writer: un grant ripetuto su tupla già attiva NON ri-emette audit (no-op)', function () {
+    $w = new RelationWriter;
+    $s = new SubjectRef('user', 'usr_1');
+    $o = new ResourceRef('doc', '42');
+
+    $w->grant($s, 'editor', $o);
+    $w->grant($s, 'editor', $o); // no-op idempotente
+    expect(AuditEvent::query()->where('event_type', 'iam.relation.granted')->count())->toBe(1);
+
+    // Revoca + nuovo grant = riattivazione → nuovo evento granted.
+    $w->revoke($s, 'editor', $o);
+    $w->grant($s, 'editor', $o);
+    expect(AuditEvent::query()->where('event_type', 'iam.relation.granted')->count())->toBe(2);
+});
+
+it('list-* sono tenant-scoped: non vedono tuple di un altro org', function () {
+    $a = Organization::create(['key' => 'a', 'name' => 'A']);
+    $b = Organization::create(['key' => 'b', 'name' => 'B']);
+    rel('user', 'usr_1', 'editor', 'doc', '42', ['organization_id' => $a->id]);
+
+    expect(collect(resolver()->listSubjects('editor', new ResourceRef('doc', '42'), $a->id))->map(fn ($s) => (string) $s)->all())->toContain('user:usr_1')
+        ->and(resolver()->listSubjects('editor', new ResourceRef('doc', '42'), $b->id))->toBe([]);
+});
 
 it('writer: grant è idempotente (no duplicati) e revoke disattiva', function () {
     $w = new RelationWriter;

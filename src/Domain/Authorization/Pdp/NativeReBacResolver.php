@@ -20,7 +20,10 @@ use Padosoft\Iam\Domain\Authorization\Models\Relation;
  */
 final class NativeReBacResolver
 {
-    /** Salti massimi nell'espansione di gruppi e gerarchie (hard cap fail-closed). */
+    /**
+     * Salti massimi PER ASSE nell'espansione (hard cap fail-closed): fino a MAX_DEPTH livelli di
+     * nesting gruppi E fino a MAX_DEPTH livelli di gerarchia risorse, valutati indipendentemente.
+     */
     public const MAX_DEPTH = 10;
 
     public function __construct(

@@ -8,6 +8,8 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Padosoft\Iam\Contracts\Authorization\AuthorizationEngine;
 use Padosoft\Iam\Contracts\Support\SubjectRef;
+use Padosoft\Iam\Domain\Authorization\Pdp\NativeReBacResolver;
+use Padosoft\Iam\Domain\Authorization\Pdp\ResourceRef;
 use Padosoft\Iam\Http\Admin\AdminController;
 use Padosoft\Iam\Http\Admin\Support\ApiProblemException;
 
@@ -19,7 +21,10 @@ use Padosoft\Iam\Http\Admin\Support\ApiProblemException;
  */
 final class DecisionsController extends AdminController
 {
-    public function __construct(private readonly AuthorizationEngine $pdp) {}
+    public function __construct(
+        private readonly AuthorizationEngine $pdp,
+        private readonly NativeReBacResolver $rebac,
+    ) {}
 
     public function check(Request $request): JsonResponse
     {
@@ -42,8 +47,10 @@ final class DecisionsController extends AdminController
             throw ApiProblemException::unprocessable('Campo object {type,id} obbligatorio.', ['object' => ['object.type e object.id sono obbligatori']]);
         }
 
+        // Scope tenant: usa il resolver con l'org dell'attore (il metodo di contratto è org-agnostico).
+        $org = $this->context($request)->organizationId;
         $subjects = [];
-        foreach ($this->pdp->listSubjects($relation, $object['type'], $object['id']) as $subject) {
+        foreach ($this->rebac->listSubjects($relation, new ResourceRef($object['type'], $object['id']), $org) as $subject) {
             $subjects[] = ['type' => $subject->type, 'id' => $subject->id];
         }
 
@@ -62,8 +69,9 @@ final class DecisionsController extends AdminController
         }
         $type = is_string($subject['type'] ?? null) ? $subject['type'] : 'user';
 
+        $org = $this->context($request)->organizationId;
         $resources = [];
-        foreach ($this->pdp->listResources(new SubjectRef($type, $subject['id']), $relation) as $resource) {
+        foreach ($this->rebac->listResources(new SubjectRef($type, $subject['id']), $relation, $org) as $resource) {
             $resources[] = $resource;
         }
 

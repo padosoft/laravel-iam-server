@@ -260,6 +260,9 @@ final class NativeSqlEngine implements AuthorizationEngine
         return is_scalar($value) ? (string) $value : $default;
     }
 
+    // I metodi di contratto sono org-agnostici (solo tuple globali): la firma non porta l'org.
+    // Per il list-* tenant-scoped, l'Admin API chiama direttamente il resolver con l'org dell'attore.
+
     public function listSubjects(string $relation, string $objectType, string $objectId): iterable
     {
         return $this->rebac->listSubjects($relation, new ResourceRef($objectType, $objectId));

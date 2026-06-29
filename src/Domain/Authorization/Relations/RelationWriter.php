@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Padosoft\Iam\Domain\Authorization\Relations;
 
+use Illuminate\Support\Str;
 use Padosoft\Iam\Contracts\Support\SubjectRef;
 use Padosoft\Iam\Domain\Audit\Pii\AuditRecorder;
 use Padosoft\Iam\Domain\Authorization\Models\Relation;
@@ -29,27 +30,37 @@ final class RelationWriter
     {
         $hash = $this->identityHash($organizationId, $subject, $relation, $object);
 
-        $tuple = Relation::query()->where('identity_hash', $hash)->first();
-        if ($tuple === null) {
-            $tuple = new Relation;
-        }
-        $tuple->fill([
+        // Stato PRIMA della scrittura: decide se l'evento di audit è una reale concessione
+        // (creazione o riattivazione) o un no-op su una tupla già attiva.
+        $before = Relation::query()->where('identity_hash', $hash)->first();
+        $wasActiveBefore = $before !== null && $before->revoked_at === null;
+
+        // Upsert ATOMICO sull'identity_hash (no TOCTOU): due grant concorrenti con la stessa identità
+        // non producono né duplicati né UniqueConstraintViolation. Su conflitto riattiva e aggiorna.
+        $now = now();
+        Relation::query()->upsert([[
+            'id' => $before->id ?? (string) Str::ulid(),
             'organization_id' => $organizationId,
             'subject_type' => $subject->type,
             'subject_id' => $subject->id,
             'relation' => $relation,
             'object_type' => $object->type,
             'object_id' => $object->id,
-            'condition' => $condition,
-            'created_by' => $createdBy,
-        ]);
-        // Riattiva un'eventuale tupla revocata con la stessa identità (forceFill: revoked_at non è fillable).
-        $tuple->forceFill([
-            'revoked_at' => null,
+            'condition' => $condition !== null ? json_encode($condition, JSON_THROW_ON_ERROR) : null,
             'consistency_token' => $this->policyVersion($organizationId),
-        ])->save();
+            'created_by' => $createdBy,
+            'identity_hash' => $hash,
+            'revoked_at' => null,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]], ['identity_hash'], ['condition', 'consistency_token', 'created_by', 'revoked_at', 'updated_at']);
 
-        $this->emit('iam.relation.granted', $tuple);
+        $tuple = Relation::query()->where('identity_hash', $hash)->firstOrFail();
+
+        // Audit solo su concessione effettiva (creazione o riattivazione), non su no-op idempotente.
+        if (!$wasActiveBefore) {
+            $this->emit('iam.relation.granted', $tuple);
+        }
 
         return $tuple;
     }
