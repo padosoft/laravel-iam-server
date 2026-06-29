@@ -15,6 +15,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  * @property string $full_key
  * @property string $risk
  * @property bool $requires_step_up
+ * @property string|null $relation
  */
 final class Permission extends Model
 {
@@ -25,6 +26,8 @@ final class Permission extends Model
     /** @var list<string> */
     protected $fillable = [
         'app_key', 'key', 'full_key', 'resource', 'action', 'risk', 'requires_step_up', 'deprecated_at',
+        // ReBAC (doc 18 §7.2): relazione richiesta su una risorsa per soddisfare il permesso (nullable).
+        'relation',
     ];
 
     /** @var array<string, mixed> */
