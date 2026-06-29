@@ -7,14 +7,15 @@ namespace Padosoft\Iam\Http\Admin\Controllers;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Padosoft\Iam\Contracts\Authorization\AuthorizationEngine;
+use Padosoft\Iam\Contracts\Support\SubjectRef;
 use Padosoft\Iam\Http\Admin\AdminController;
 use Padosoft\Iam\Http\Admin\Support\ApiProblemException;
 
 /**
- * Admin API — Decisions / Policy Playground (doc 16 §3.15). Espone il PDP per il "what-if": check
- * (allow/deny + matched), explain (con la spiegazione passo-passo). Il PDP resta l'autorità; qui è
- * solo una superficie HTTP di interrogazione per l'Admin Panel. list-subjects/list-resources sono
- * ReBAC (v2) → 501.
+ * Admin API — Decisions / Policy Playground (doc 16 §3.15, doc 18 §8). Espone il PDP per il "what-if":
+ * check (allow/deny + matched), explain (spiegazione passo-passo), e — col ReBAC nativo (M16) —
+ * list-subjects ("chi può accedere a R?") / list-resources ("su cosa può agire S?"). Il PDP resta
+ * l'autorità; qui è solo una superficie HTTP di interrogazione per l'Admin Panel.
  */
 final class DecisionsController extends AdminController
 {
@@ -32,12 +33,41 @@ final class DecisionsController extends AdminController
 
     public function listSubjects(Request $request): JsonResponse
     {
-        throw new ApiProblemException(501, 'Not Implemented', 'list-subjects richiede il ReBAC reverse-index (v2).');
+        $relation = $this->stringInput($request, 'relation');
+        if ($relation === null) {
+            throw ApiProblemException::unprocessable('Campo relation obbligatorio.', ['relation' => ['relation è obbligatorio']]);
+        }
+        $object = $request->input('object');
+        if (!is_array($object) || !is_string($object['type'] ?? null) || !is_string($object['id'] ?? null) || $object['id'] === '') {
+            throw ApiProblemException::unprocessable('Campo object {type,id} obbligatorio.', ['object' => ['object.type e object.id sono obbligatori']]);
+        }
+
+        $subjects = [];
+        foreach ($this->pdp->listSubjects($relation, $object['type'], $object['id']) as $subject) {
+            $subjects[] = ['type' => $subject->type, 'id' => $subject->id];
+        }
+
+        return $this->ok(['subjects' => $subjects]);
     }
 
     public function listResources(Request $request): JsonResponse
     {
-        throw new ApiProblemException(501, 'Not Implemented', 'list-resources richiede il ReBAC reverse-index (v2).');
+        $relation = $this->stringInput($request, 'relation');
+        if ($relation === null) {
+            throw ApiProblemException::unprocessable('Campo relation obbligatorio.', ['relation' => ['relation è obbligatorio']]);
+        }
+        $subject = $request->input('subject');
+        if (!is_array($subject) || !is_string($subject['id'] ?? null) || $subject['id'] === '') {
+            throw ApiProblemException::unprocessable('Campo subject {type,id} obbligatorio.', ['subject' => ['subject.id è obbligatorio']]);
+        }
+        $type = is_string($subject['type'] ?? null) ? $subject['type'] : 'user';
+
+        $resources = [];
+        foreach ($this->pdp->listResources(new SubjectRef($type, $subject['id']), $relation) as $resource) {
+            $resources[] = $resource;
+        }
+
+        return $this->ok(['resources' => $resources]);
     }
 
     /**
@@ -66,6 +96,8 @@ final class DecisionsController extends AdminController
             'context' => is_array($context) ? $context : [],
             'current_aal' => $this->stringInput($request, 'current_aal') ?? 'aal1',
             'explain' => $explain,
+            // ReBAC (doc 18 §7): relation-diretta opzionale; l'object è derivato da `resource`.
+            'relation' => $this->stringInput($request, 'relation'),
         ]);
     }
 

@@ -10,6 +10,7 @@ use Padosoft\Iam\Http\Admin\Controllers\AuditController;
 use Padosoft\Iam\Http\Admin\Controllers\DecisionsController;
 use Padosoft\Iam\Http\Admin\Controllers\ManifestsController;
 use Padosoft\Iam\Http\Admin\Controllers\RecommendationsController;
+use Padosoft\Iam\Http\Admin\Controllers\RelationsController;
 use Padosoft\Iam\Http\Admin\Controllers\SessionsController;
 use Padosoft\Iam\Http\Admin\Controllers\UsersController;
 
@@ -32,6 +33,10 @@ Route::post('decisions/check', [DecisionsController::class, 'check'])->middlewar
 Route::post('decisions/explain', [DecisionsController::class, 'explain'])->middleware('iam.can:iam:decisions.explain');
 Route::post('decisions/list-subjects', [DecisionsController::class, 'listSubjects'])->middleware('iam.can:iam:decisions.explain');
 Route::post('decisions/list-resources', [DecisionsController::class, 'listResources'])->middleware('iam.can:iam:decisions.explain');
+
+// Relations (tuple ReBAC, doc 18 §8)
+Route::post('relations', [RelationsController::class, 'store'])->middleware('iam.can:iam:relations.manage');
+Route::delete('relations', [RelationsController::class, 'destroy'])->middleware('iam.can:iam:relations.manage');
 
 // Sessions (doc 16 §3.16)
 Route::get('sessions', [SessionsController::class, 'index'])->middleware('iam.can:iam:sessions.read');

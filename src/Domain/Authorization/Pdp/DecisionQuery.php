@@ -22,5 +22,10 @@ final readonly class DecisionQuery
         public array $context = [],
         public string $currentAal = 'aal1',
         public bool $explain = false,
+        // ReBAC (doc 18 §7): `relation` per una check relation-diretta; `object` è la risorsa del grafo.
+        // `minPolicyVersion` > 0 ⇒ consistency=strong (ignora tuple più stale del token richiesto).
+        public ?string $relation = null,
+        public ?ResourceRef $object = null,
+        public int $minPolicyVersion = 0,
     ) {}
 }

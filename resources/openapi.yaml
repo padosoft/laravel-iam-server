@@ -191,15 +191,88 @@ paths:
   /decisions/list-subjects:
     post:
       tags: [Decisions]
-      summary: ReBAC list-subjects (v2)
+      summary: ReBAC list-subjects — chi ha la relazione su una risorsa (M16)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [relation, object]
+              properties:
+                relation: { type: string, example: editor }
+                object:
+                  type: object
+                  properties:
+                    type: { type: string, example: doc }
+                    id: { type: string, example: "42" }
       responses:
-        "501": { $ref: "#/components/responses/Problem" }
+        "200": { description: Elenco soggetti }
+        "422": { $ref: "#/components/responses/Problem" }
   /decisions/list-resources:
     post:
       tags: [Decisions]
-      summary: ReBAC list-resources (v2)
+      summary: ReBAC list-resources — su cosa il soggetto ha la relazione (M16)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subject, relation]
+              properties:
+                subject:
+                  type: object
+                  properties:
+                    type: { type: string, example: user }
+                    id: { type: string, example: usr_123 }
+                relation: { type: string, example: owner }
       responses:
-        "501": { $ref: "#/components/responses/Problem" }
+        "200": { description: Elenco risorse }
+        "422": { $ref: "#/components/responses/Problem" }
+  /relations:
+    post:
+      tags: [Decisions]
+      summary: Crea una tupla ReBAC (subject, relation, object) — idempotente (M16)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subject, relation, object]
+              properties:
+                subject:
+                  type: object
+                  properties:
+                    type: { type: string, example: user }
+                    id: { type: string, example: usr_123 }
+                relation: { type: string, example: owner }
+                object:
+                  type: object
+                  properties:
+                    type: { type: string, example: doc }
+                    id: { type: string, example: "42" }
+                condition: { type: object, nullable: true }
+      responses:
+        "201": { description: Tupla creata }
+        "422": { $ref: "#/components/responses/Problem" }
+    delete:
+      tags: [Decisions]
+      summary: Revoca una tupla ReBAC (subject, relation, object) — idempotente (M16)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subject, relation, object]
+              properties:
+                subject: { type: object }
+                relation: { type: string }
+                object: { type: object }
+      responses:
+        "200": { description: Esito revoca }
   /sessions:
     get:
       tags: [Sessions]

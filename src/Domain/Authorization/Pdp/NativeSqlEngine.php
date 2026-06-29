@@ -16,14 +16,16 @@ use Padosoft\Iam\Domain\Governance\GrantUsageRecorder;
 use Padosoft\Iam\Domain\Organizations\Models\Organization;
 
 /**
- * PDP nativo su SQL: RBAC + ABAC con algoritmo deny-overrides + default-deny (doc 09 §4).
- * Il ReBAC (relation/list-*) arriva con il reverse-index in M2.x/v2.
+ * PDP nativo su SQL: RBAC + ABAC + ReBAC con algoritmo deny-overrides + default-deny (doc 09 §4, doc 18 §7).
+ * Le relazioni (tuple) vivono in `iam_relations` e sono risolte dal NativeReBacResolver; un deny esplicito
+ * RBAC/ABAC scavalca sempre un permit relazionale.
  */
 final class NativeSqlEngine implements AuthorizationEngine
 {
     public function __construct(
         private readonly ConditionEvaluator $conditions = new ConditionEvaluator,
         private readonly ?GrantUsageRecorder $usage = null,
+        private readonly NativeReBacResolver $rebac = new NativeReBacResolver,
     ) {}
 
     public function decide(DecisionQuery $q): Decision
@@ -68,8 +70,12 @@ final class NativeSqlEngine implements AuthorizationEngine
             );
         }
 
-        // default-deny (fail-closed)
-        if ($permits === []) {
+        // ReBAC (doc 18 §7): permit relazionale via iam_relations. Non scavalca un deny esplicito
+        // (già gestito sopra con deny-overrides), ma concede un permit dove RBAC/ABAC non arriva.
+        $relationMatched = $this->relationalPermit($q, $explain);
+
+        // default-deny (fail-closed): nessun permit RBAC/ABAC né relazionale.
+        if ($permits === [] && $relationMatched === null) {
             return new Decision(
                 allowed: false,
                 decisionId: $decisionId,
@@ -78,14 +84,20 @@ final class NativeSqlEngine implements AuthorizationEngine
             );
         }
 
-        // permit (+ eventuale step-up)
-        $g = $permits[0];
-        // Usage capture (doc 14 §2): segnala il grant che ha prodotto il permit → last_used_at (batch).
-        ($this->usage ?? app(GrantUsageRecorder::class))->record($g->id);
         $requiresStepUp = $this->requiresStepUp($q->permission) && !$this->aalSufficient($q->currentAal, 'aal2');
-        $explain[] = "PERMIT da grant {$g->id} ({$g->privilege_type}:{$g->privilege_key}) per {$q->permission}.";
         if ($requiresStepUp) {
             $explain[] = "Permesso {$q->permission} richiede step-up: AAL {$q->currentAal} < aal2.";
+        }
+
+        if ($permits !== []) {
+            // permit RBAC/ABAC: usage capture (doc 14 §2) sul grant che ha prodotto il permit.
+            $g = $permits[0];
+            ($this->usage ?? app(GrantUsageRecorder::class))->record($g->id);
+            $explain[] = "PERMIT da grant {$g->id} ({$g->privilege_type}:{$g->privilege_key}) per {$q->permission}.";
+            $matched = [['type' => $g->privilege_type, 'key' => $g->privilege_key]];
+        } else {
+            // permit puramente relazionale (nessun grant RBAC/ABAC, ma la relazione vale).
+            $matched = [['type' => 'relation', 'key' => (string) $relationMatched]];
         }
 
         return new Decision(
@@ -94,9 +106,51 @@ final class NativeSqlEngine implements AuthorizationEngine
             policyVersion: $policyVersion,
             requiresStepUp: $requiresStepUp,
             requiredAal: $requiresStepUp ? 'aal2' : null,
-            matched: [['type' => $g->privilege_type, 'key' => $g->privilege_key]],
+            matched: $matched,
             explanation: $explain,
         );
+    }
+
+    /**
+     * Permit relazionale (doc 18 §7): check relation-diretta (`q.relation` + `q.object`) oppure
+     * permission→relation binding (la Permission dichiara una `relation` richiesta). Ritorna il nome
+     * della relazione soddisfatta (e arricchisce l'explain col path) o null. Fail-closed: senza
+     * `object` non c'è ReBAC.
+     *
+     * @param  list<string>  $explain
+     */
+    private function relationalPermit(DecisionQuery $q, array &$explain): ?string
+    {
+        if ($q->object === null) {
+            return null;
+        }
+        if ($q->relation !== null && $q->relation !== '') {
+            return $this->checkRelation($q, $q->relation, $explain);
+        }
+        $bound = Permission::query()->where('full_key', $q->permission)->value('relation');
+        if (is_string($bound) && $bound !== '') {
+            return $this->checkRelation($q, $bound, $explain);
+        }
+
+        return null;
+    }
+
+    /** @param  list<string>  $explain */
+    private function checkRelation(DecisionQuery $q, string $relation, array &$explain): ?string
+    {
+        $object = $q->object;
+        if ($object === null) {
+            return null;
+        }
+        $r = $this->rebac->hasRelation($q->subject, $relation, $object, $q->context, $q->organizationId, $q->minPolicyVersion);
+        if ($r->holds) {
+            $explain[] = "PERMIT via relazione '{$relation}': ".implode(' / ', $r->path);
+
+            return $relation;
+        }
+        $explain[] = "Relazione '{$relation}' su {$object} non soddisfatta.";
+
+        return null;
     }
 
     /** @return Collection<int, Grant> */
@@ -122,7 +176,9 @@ final class NativeSqlEngine implements AuthorizationEngine
                 ->whereNull('deprecated_at')
                 ->whereHas('permissions', fn (Builder $b) => $b->where('full_key', $permissionFullKey)->whereNull('deprecated_at'))
                 ->exists(),
-            default => false, // relation → ReBAC (M2.x)
+            // Le relazioni ReBAC NON vivono nei grant ma in iam_relations (sorgente di verità del
+            // resolver, doc 18 §7): un grant privilege_type='relation' non concede di per sé un permesso.
+            default => false,
         };
     }
 
@@ -163,18 +219,40 @@ final class NativeSqlEngine implements AuthorizationEngine
         $subject = is_array($query['subject'] ?? null) ? $query['subject'] : [];
         $context = is_array($query['context'] ?? null) ? $query['context'] : [];
         /** @var array<string, mixed> $context */
+        $object = $this->parseResource($query['resource'] ?? ($query['object'] ?? null));
         $q = new DecisionQuery(
             subject: new SubjectRef($this->str($subject['type'] ?? null, 'user'), $this->str($subject['id'] ?? null)),
             permission: $this->str($query['permission'] ?? null),
             organizationId: isset($query['organization']) ? $this->str($query['organization']) : null,
             applicationKey: isset($query['application']) ? $this->str($query['application']) : null,
-            resourceRef: isset($query['resource']) ? $this->str($query['resource']) : null,
+            resourceRef: $object !== null ? (string) $object : (isset($query['resource']) ? $this->str($query['resource']) : null),
             context: $context,
             currentAal: $this->str($query['current_aal'] ?? null, 'aal1'),
             explain: (bool) ($query['explain'] ?? false),
+            relation: isset($query['relation']) ? $this->str($query['relation']) : null,
+            object: $object,
+            minPolicyVersion: is_numeric($query['min_policy_version'] ?? null) ? (int) $query['min_policy_version'] : 0,
         );
 
         return $this->decide($q)->toArray();
+    }
+
+    /**
+     * Parsa la risorsa dal formato canonico (doc 01 §12): `{type, id}` → ResourceRef.
+     * Una stringa "type:id" è accettata come scorciatoia. Qualsiasi altra forma → null.
+     */
+    private function parseResource(mixed $resource): ?ResourceRef
+    {
+        if (is_array($resource) && isset($resource['type'], $resource['id'])) {
+            return new ResourceRef($this->str($resource['type']), $this->str($resource['id']));
+        }
+        if (is_string($resource) && str_contains($resource, ':')) {
+            [$type, $id] = explode(':', $resource, 2);
+
+            return new ResourceRef($type, $id);
+        }
+
+        return null;
     }
 
     private function str(mixed $value, string $default = ''): string
@@ -184,11 +262,11 @@ final class NativeSqlEngine implements AuthorizationEngine
 
     public function listSubjects(string $relation, string $objectType, string $objectId): iterable
     {
-        throw new \RuntimeException('list-subjects: disponibile con il ReBAC reverse-index (M2.x/v2).');
+        return $this->rebac->listSubjects($relation, new ResourceRef($objectType, $objectId));
     }
 
     public function listResources(SubjectRef $subject, string $relation): iterable
     {
-        throw new \RuntimeException('list-resources: disponibile con il ReBAC reverse-index (M2.x/v2).');
+        return $this->rebac->listResources($subject, $relation);
     }
 }

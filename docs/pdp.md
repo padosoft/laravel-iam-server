@@ -79,13 +79,50 @@ A permission can require a higher assurance level. When `currentAal` is below wh
 decision comes back `allowed = false`, `requiresStepUp = true`, `requiredAal = 'aal2'`. The caller triggers
 a step-up (passkey/MFA) and retries with the elevated AAL.
 
+## ReBAC — relationships (native engine)
+
+Beyond roles (RBAC) and attributes (ABAC), the PDP answers **per-resource** questions: *can this subject act
+on **this** object because of a relationship?* Relationships are stored as tuples `(subject, relation, object)`
+in `iam_relations` — e.g. `(user:mario, owner, doc:42)`.
+
+The native resolver computes reachability in the relationship graph, bounded and fail-closed:
+
+- **Direct** — the tuple exists.
+- **Group nesting** — the subject is a `member` of a group that holds the relation (transitive).
+- **Resource hierarchy** — the subject holds the relation on an ancestor reached via `parent` (propagates down).
+- **Implication** — a stronger relation satisfies a weaker check (default `owner ⊇ editor ⊇ viewer`).
+
+Two ways relationships enter a decision:
+
+- **Direct relation check** — the query carries `relation` + `object`; the PDP returns allow iff the relation holds.
+- **Permission→relation binding** — a permission may declare a required `relation`; a normal permission check on a
+  resource then also consults the graph. Same engine, same explanation, same audit — and **deny-overrides still
+  wins**: an explicit deny is never overridden by a relational permit.
+
+Traversal is hard-capped (depth + cycle guard); exceeding the bound is a **deny**, surfaced in the explanation —
+never a silent allow. The pure-Zanzibar external backend (OpenFGA/SpiceDB) for massive scale is v2; the
+`AuthorizationEngine` interface already exposes `listSubjects`/`listResources` so it slots in without touching the PDP.
+
+```php
+// Write a tuple, then check it
+app(RelationWriter::class)->grant(new SubjectRef('user', 'mario'), 'owner', new ResourceRef('doc', '42'));
+
+$decision = app(AuthorizationEngine::class)->check([
+    'subject'  => ['type' => 'user', 'id' => 'mario'],
+    'relation' => 'viewer',                 // owner satisfies viewer
+    'resource' => ['type' => 'doc', 'id' => '42'],
+]);
+// $decision['allowed'] === true
+```
+
 ## Over HTTP
 
 The same engine is exposed on the Admin API:
 
 - `POST /admin/decisions/check` — allow/deny.
 - `POST /admin/decisions/explain` — decision with full explanation.
-- `POST /admin/decisions/list-subjects` and `/list-resources` — ReBAC reverse-index.
+- `POST /admin/decisions/list-subjects` and `/list-resources` — ReBAC reverse-index ("who can access R?" / "what can S access?").
+- `POST` / `DELETE /admin/relations` — write/revoke ReBAC tuples (idempotent, audited).
 
 In consuming apps, prefer [`laravel-iam-client`](https://github.com/padosoft/laravel-iam-client), which calls
 these for you, caches decisions, and exposes an `iam.can` middleware and a Gate adapter.

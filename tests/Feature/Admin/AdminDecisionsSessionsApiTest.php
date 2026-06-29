@@ -78,11 +78,16 @@ it('decisions/check senza permesso è 403 fail-closed', function () {
     ], ['X-Test-Auth' => 'adm', 'Idempotency-Key' => 'f1'])->assertStatus(403);
 });
 
-it('list-subjects/list-resources sono 501 (ReBAC v2)', function () {
+it('list-subjects/list-resources funzionano (ReBAC nativo M16) e validano l\'input', function () {
     grantAdmin('adm', ['iam:decisions.explain']);
 
+    // Senza relation/object → 422 (validazione), non più 501.
     $this->postJson('/api/iam/v1/decisions/list-subjects', [], ['X-Test-Auth' => 'adm', 'Idempotency-Key' => 'l1'])
-        ->assertStatus(501);
+        ->assertStatus(422);
+
+    // Con input valido → 200 con l'elenco (vuoto se non ci sono tuple).
+    $this->postJson('/api/iam/v1/decisions/list-subjects', ['relation' => 'editor', 'object' => ['type' => 'doc', 'id' => '42']], ['X-Test-Auth' => 'adm', 'Idempotency-Key' => 'l2'])
+        ->assertOk()->assertJsonPath('data.subjects', []);
 });
 
 it('sessions: elenca e revoca una sessione (audit + idempotente)', function () {
