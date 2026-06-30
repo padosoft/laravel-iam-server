@@ -485,3 +485,391 @@ paths:
       summary: Verifica la hash-chain di audit (tamper-evidence)
       responses:
         "200": { description: OK }
+  # ── M17: Admin API completion (doc 19) ──────────────────────────────────────
+  /access-requests/{accessRequest}/steps:
+    get:
+      tags: [AccessRequests]
+      summary: Elenca gli step della catena di approvazione (multi-step, M17)
+      parameters: [{ name: accessRequest, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "404": { $ref: "#/components/responses/Problem" }
+  /access-requests/{accessRequest}/steps/{step}/approve:
+    post:
+      tags: [AccessRequests]
+      summary: Approva uno step (AND sequenziale; grant solo all'ultimo step)
+      parameters:
+        - { name: accessRequest, in: path, required: true, schema: { type: string } }
+        - { name: step, in: path, required: true, schema: { type: string } }
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200": { description: Step approvato (granted=true se catena completata) }
+        "409": { $ref: "#/components/responses/Problem" }
+  /access-requests/{accessRequest}/steps/{step}/reject:
+    post:
+      tags: [AccessRequests]
+      summary: Rifiuta uno step e la richiesta (fail-closed, nessun grant)
+      parameters:
+        - { name: accessRequest, in: path, required: true, schema: { type: string } }
+        - { name: step, in: path, required: true, schema: { type: string } }
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200": { description: Richiesta rifiutata }
+        "409": { $ref: "#/components/responses/Problem" }
+  /groups:
+    get:
+      tags: [Groups]
+      summary: Elenca i gruppi (cursor, tenant-scoped)
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200": { description: OK }
+    post:
+      tags: [Groups]
+      summary: Crea un gruppo
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [key, name]
+              properties:
+                key: { type: string, example: eng }
+                name: { type: string, example: Engineering }
+                source: { type: string, example: manual }
+      responses:
+        "201": { description: Gruppo creato }
+        "409": { $ref: "#/components/responses/Problem" }
+  /groups/{group}:
+    get:
+      tags: [Groups]
+      summary: Dettaglio gruppo
+      parameters: [{ name: group, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "404": { $ref: "#/components/responses/Problem" }
+    patch:
+      tags: [Groups]
+      summary: Aggiorna un gruppo (name/source)
+      parameters:
+        - { name: group, in: path, required: true, schema: { type: string } }
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200": { description: OK }
+    delete:
+      tags: [Groups]
+      summary: Revoca (soft) un gruppo
+      parameters:
+        - { name: group, in: path, required: true, schema: { type: string } }
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200": { description: OK }
+  /groups/{group}/members:
+    get:
+      tags: [Groups]
+      summary: Elenca i membri del gruppo
+      parameters:
+        - { name: group, in: path, required: true, schema: { type: string } }
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200": { description: OK }
+    post:
+      tags: [Groups]
+      summary: Aggiunge un membro (scrive anche la tupla ReBAC member, M16)
+      parameters:
+        - { name: group, in: path, required: true, schema: { type: string } }
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [member_type, member_id]
+              properties:
+                member_type: { type: string, enum: [user, group, service_account] }
+                member_id: { type: string }
+      responses:
+        "201": { description: Membro aggiunto }
+    delete:
+      tags: [Groups]
+      summary: Rimuove un membro (revoca anche la tupla ReBAC member)
+      parameters:
+        - { name: group, in: path, required: true, schema: { type: string } }
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200": { description: OK }
+  /federated-providers:
+    get:
+      tags: [Federated]
+      summary: Elenca i provider federati (secret mai restituito)
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200": { description: OK }
+    post:
+      tags: [Federated]
+      summary: Crea un provider federato (client_secret write-only, cifrato)
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [key, driver]
+              properties:
+                key: { type: string, example: google }
+                driver: { type: string, enum: [socialite, oidc, saml] }
+                client_id: { type: string }
+                client_secret: { type: string, description: write-only mai restituito }
+      responses:
+        "201": { description: Provider creato }
+        "409": { $ref: "#/components/responses/Problem" }
+  /federated-providers/{provider}:
+    get:
+      tags: [Federated]
+      summary: Dettaglio provider
+      parameters: [{ name: provider, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "404": { $ref: "#/components/responses/Problem" }
+    patch:
+      tags: [Federated]
+      summary: Aggiorna un provider (client_secret ruotabile, write-only)
+      parameters:
+        - { name: provider, in: path, required: true, schema: { type: string } }
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200": { description: OK }
+    delete:
+      tags: [Federated]
+      summary: Elimina un provider
+      parameters:
+        - { name: provider, in: path, required: true, schema: { type: string } }
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200": { description: OK }
+  /federated-providers/{provider}/test:
+    post:
+      tags: [Federated]
+      summary: Valida la config (discovery) senza esporre il secret
+      parameters:
+        - { name: provider, in: path, required: true, schema: { type: string } }
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200": { description: Esito validazione (ok + issues) }
+  /directory-sources:
+    get:
+      tags: [Directory]
+      summary: Elenca le sorgenti directory (bind_secret mai restituito)
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200": { description: OK }
+    post:
+      tags: [Directory]
+      summary: Crea una sorgente directory (bind_secret write-only, cifrato)
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [key, name, host, base_dn]
+              properties:
+                key: { type: string, example: corp-ad }
+                name: { type: string }
+                type: { type: string, enum: [ldap, scim, saml] }
+                host: { type: string }
+                base_dn: { type: string }
+                bind_dn: { type: string }
+                bind_secret: { type: string, description: write-only mai restituito }
+      responses:
+        "201": { description: Sorgente creata }
+        "409": { $ref: "#/components/responses/Problem" }
+  /directory-sources/{source}:
+    get:
+      tags: [Directory]
+      summary: Dettaglio sorgente
+      parameters: [{ name: source, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "404": { $ref: "#/components/responses/Problem" }
+    patch:
+      tags: [Directory]
+      summary: Aggiorna una sorgente (bind_secret ruotabile, write-only)
+      parameters:
+        - { name: source, in: path, required: true, schema: { type: string } }
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200": { description: OK }
+    delete:
+      tags: [Directory]
+      summary: Elimina una sorgente
+      parameters:
+        - { name: source, in: path, required: true, schema: { type: string } }
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200": { description: OK }
+  /directory-sources/{source}/sync:
+    post:
+      tags: [Directory]
+      summary: Trigger sync (delegato al modulo directory; 409 se non attivo)
+      parameters:
+        - { name: source, in: path, required: true, schema: { type: string } }
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "202": { description: Sync accodata }
+        "409": { $ref: "#/components/responses/Problem" }
+  /directory-sources/{source}/test:
+    post:
+      tags: [Directory]
+      summary: Test bind (delegato al modulo directory; 409 se non attivo)
+      parameters:
+        - { name: source, in: path, required: true, schema: { type: string } }
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200": { description: Esito test }
+        "409": { $ref: "#/components/responses/Problem" }
+  /policies-wizard/permissions:
+    get:
+      tags: [PolicyWizard]
+      summary: Catalogo permessi/ruoli per comporre una policy
+      parameters:
+        - { name: app, in: query, required: false, schema: { type: string } }
+      responses:
+        "200": { description: OK }
+  /policies-wizard/preview:
+    post:
+      tags: [PolicyWizard]
+      summary: Anteprima d'impatto di un grant proposto (NON scrive nulla)
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subject, privilege_type, privilege_key]
+              properties:
+                subject: { type: object }
+                privilege_type: { type: string, enum: [permission, role] }
+                privilege_key: { type: string }
+      responses:
+        "200": { description: Anteprima (writes=false) }
+  /policies-wizard/commit:
+    post:
+      tags: [PolicyWizard]
+      summary: Crea il grant proposto (idempotente)
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      responses:
+        "201": { description: Grant creato }
+        "200": { description: Grant già esistente (idempotente) }
+  /webhooks:
+    get:
+      tags: [Webhooks]
+      summary: Elenca le subscription webhook (secret mai restituito)
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200": { description: OK }
+    post:
+      tags: [Webhooks]
+      summary: Crea una subscription (secret HMAC write-only; URL anti-SSRF)
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url, event_filters, secret]
+              properties:
+                url: { type: string, example: "https://hook.example/in" }
+                event_filters: { type: array, items: { type: string } }
+                secret: { type: string, description: write-only HMAC }
+      responses:
+        "201": { description: Subscription creata }
+        "422": { $ref: "#/components/responses/Problem" }
+  /webhooks/deliveries/{delivery}/replay:
+    post:
+      tags: [Webhooks]
+      summary: DLQ replay di una delivery failed (riusa il WebhookRetrier)
+      parameters:
+        - { name: delivery, in: path, required: true, schema: { type: string } }
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200": { description: Replay accodato }
+        "409": { $ref: "#/components/responses/Problem" }
+  /webhooks/{subscription}:
+    get:
+      tags: [Webhooks]
+      summary: Dettaglio subscription
+      parameters: [{ name: subscription, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "404": { $ref: "#/components/responses/Problem" }
+    patch:
+      tags: [Webhooks]
+      summary: Aggiorna una subscription (secret ruotabile, write-only)
+      parameters:
+        - { name: subscription, in: path, required: true, schema: { type: string } }
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200": { description: OK }
+    delete:
+      tags: [Webhooks]
+      summary: Elimina una subscription
+      parameters:
+        - { name: subscription, in: path, required: true, schema: { type: string } }
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200": { description: OK }
+  /webhooks/{subscription}/test:
+    post:
+      tags: [Webhooks]
+      summary: Invio di un evento di prova (passa dall'URL-guard e dal signer)
+      parameters:
+        - { name: subscription, in: path, required: true, schema: { type: string } }
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200": { description: Esito consegna di prova }
+  /webhooks/{subscription}/deliveries:
+    get:
+      tags: [Webhooks]
+      summary: Storico consegne (cursor)
+      parameters:
+        - { name: subscription, in: path, required: true, schema: { type: string } }
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200": { description: OK }
+  /metrics/decisions:
+    get:
+      tags: [Metrics]
+      summary: Aggregazioni decisioni (allow/deny, top denied, step-up) bounded
+      parameters:
+        - { name: from, in: query, required: false, schema: { type: string, format: date-time } }
+        - { name: to, in: query, required: false, schema: { type: string, format: date-time } }
+        - { name: app, in: query, required: false, schema: { type: string } }
+      responses:
+        "200": { description: OK }
+  /metrics/grants:
+    get:
+      tags: [Metrics]
+      summary: Aggregazioni grant (active/expired/privileged/stale) bounded
+      responses:
+        "200": { description: OK }
+  /metrics/audit:
+    get:
+      tags: [Metrics]
+      summary: Aggregazioni audit (per tipo, integrità chain, outbox lag) bounded
+      parameters:
+        - { name: from, in: query, required: false, schema: { type: string, format: date-time } }
+        - { name: to, in: query, required: false, schema: { type: string, format: date-time } }
+      responses:
+        "200": { description: OK }

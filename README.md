@@ -59,7 +59,9 @@ ask the PDP. You get one place to see and prove every access decision.
 - **Assurance / step-up** — NIST 800-63B assurance levels; the PDP can require step-up (AAL2) for critical
   actions.
 - **Admin API + panel** — every admin route is documented in `resources/openapi.yaml` (enforced by a test),
-  protected by the `iam.can` permission middleware, with idempotency keys on writes.
+  protected by the `iam.can` permission middleware, with idempotency keys on writes. The surface is
+  complete: groups (with native ReBAC nesting), federated providers, directory sources, policy wizard,
+  webhooks (with DLQ replay), metrics, and multi-step approver chains for access requests.
 - **Observability** — health/readiness endpoints and a pluggable tracer (`NullTracer` / `LogTracer`).
 
 ## Use cases

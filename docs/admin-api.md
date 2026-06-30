@@ -29,6 +29,13 @@ Pass the admin token in `Authorization: Bearer …`, never in a query string or 
 | Decisions | `POST decisions/check`, `decisions/explain`, `decisions/list-subjects`, `decisions/list-resources` |
 | Applications & manifests | `GET applications`, `POST applications/{app}/manifests`, `manifests/{m}/approve\|apply\|rollback`, `manifests/{m}/diff` |
 | Governance | `access-reviews/...`, `access-requests/...`, `recommendations/least-privilege` |
+| Groups (M17) | `GET\|POST groups`, `groups/{group}/members`, writes the ReBAC `member` tuple so the native resolver sees nesting |
+| Federated providers (M17) | `GET\|POST federated-providers`, `federated-providers/{p}/test` — `client_secret` write-only (encrypted, never returned) |
+| Directory sources (M17) | `GET\|POST directory-sources`, `directory-sources/{s}/sync\|test` — `bind_secret` write-only; `409` when the `-directory` module is inactive |
+| Policy wizard (M17) | `GET policies-wizard/permissions`, `POST policies-wizard/preview` (writes nothing), `POST policies-wizard/commit` (idempotent) |
+| Webhooks (M17) | `GET\|POST webhooks`, `webhooks/{w}/test`, `webhooks/{w}/deliveries`, `POST webhooks/deliveries/{d}/replay` (DLQ) — secret write-only |
+| Metrics (M17) | `GET metrics/decisions\|grants\|audit` — read-only, tenant-scoped, bounded aggregations |
+| Approver chain (M17) | `POST access-requests/{r}/steps/{s}/approve\|reject` — sequential AND; grant emitted only at the final step |
 | Audit | `GET audit/events`, `POST audit/verify-chain` |
 
 ## The contract is tested

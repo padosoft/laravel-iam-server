@@ -10,6 +10,7 @@ use Padosoft\Iam\Domain\Audit\Pii\AuditRecorder;
 use Padosoft\Iam\Domain\Authorization\Models\Grant;
 use Padosoft\Iam\Domain\Authorization\Models\Role;
 use Padosoft\Iam\Domain\Governance\Requests\Models\AccessRequest;
+use Padosoft\Iam\Domain\Governance\Requests\Models\ApprovalStep;
 
 /**
  * Workflow Access Request self-service (doc 14 §4): submit → approve|reject|cancel. La submit passa
@@ -68,12 +69,50 @@ final class AccessRequestService
             'request_policy_json' => $request,
         ]);
 
+        // M17: se la request policy del ruolo dichiara una catena multi-step, materializza gli step
+        // (AND sequenziale, doc 19 §9). Assente → comportamento M8 (approvazione singola via approve()).
+        $this->materializeSteps($accessRequest, $request);
+
         $this->record('iam.access_request.submitted', $accessRequest, [
             'role_key' => $role->full_key,
             'requester' => (string) $requester,
         ]);
 
         return $accessRequest;
+    }
+
+    /**
+     * Materializza gli step di approvazione da `request_policy_json.approval_steps` (lista ordinata di
+     * `{approver_type, approver_ref}`). Posizioni 1..N; tutte `pending`. Una catena a 1 step coincide
+     * col comportamento M8.
+     *
+     * @param  array<array-key, mixed>  $request
+     */
+    private function materializeSteps(AccessRequest $accessRequest, array $request): void
+    {
+        $steps = $request['approval_steps'] ?? null;
+        if (!is_array($steps)) {
+            return;
+        }
+
+        $position = 0;
+        foreach ($steps as $step) {
+            if (!is_array($step)) {
+                continue;
+            }
+            $type = $step['approver_type'] ?? null;
+            $ref = $step['approver_ref'] ?? null;
+            if (!is_string($type) || $type === '' || !is_string($ref) || $ref === '') {
+                continue;
+            }
+            $position++;
+            ApprovalStep::create([
+                'access_request_id' => $accessRequest->id,
+                'position' => $position,
+                'approver_type' => $type,
+                'approver_ref' => $ref,
+            ]);
+        }
     }
 
     /**
@@ -84,10 +123,36 @@ final class AccessRequestService
     {
         // Segregation of duties: un richiedente non può approvare la propria richiesta. L'autorizzazione
         // dell'approver rispetto alla approver_chain (ruoli/owner) è applicata a monte dall'API (M10).
+        $this->assertNotSelfApproval($req, $approver);
+
+        // M17: se la richiesta ha una catena multi-step, l'approvazione passa SOLO dai singoli step
+        // (ApproverChainService) → il grant nasce solo all'ultimo step. Bypassare la catena qui
+        // violerebbe l'invariante "grant solo a fine catena": fail-closed, 409.
+        if (ApprovalStep::query()->where('access_request_id', $req->id)->exists()) {
+            throw new \RuntimeException('Richiesta con catena multi-step: approva i singoli step.');
+        }
+
+        return $this->finalizeApproval($req, $approver);
+    }
+
+    /**
+     * Segregation of duties: l'approver non può essere il richiedente.
+     */
+    public function assertNotSelfApproval(AccessRequest $req, string $approver): void
+    {
         if ($approver === (string) new SubjectRef($req->requester_type, $req->requester_id)) {
             throw new \RuntimeException('Self-approval non consentita: l\'approver non può essere il richiedente.');
         }
+    }
 
+    /**
+     * Emissione del grant time-boxed e transizione a `approved`. Atomico (transazione + lock) e
+     * idempotente sullo stato (solo una richiesta `pending`). Condiviso fra l'approvazione singola (M8)
+     * e l'ultimo step della catena multi-step (M17): è l'UNICO punto che materializza il grant, così
+     * l'invariante "grant time-boxed solo all'approvazione finale" resta garantita in entrambi i flussi.
+     */
+    public function finalizeApproval(AccessRequest $req, string $approver): Grant
+    {
         return DB::transaction(function () use ($req, $approver): Grant {
             $locked = AccessRequest::query()->whereKey($req->id)->lockForUpdate()->first();
             if ($locked === null || $locked->status !== 'pending') {
