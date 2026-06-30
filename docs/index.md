@@ -8,6 +8,13 @@ description: The self-hostable Identity & Authorization control plane for Larave
 `padosoft/laravel-iam-server` is the **control plane** of the [Laravel IAM](https://github.com/padosoft)
 ecosystem: a self-hostable Identity & Authorization platform you install as a composer package.
 
+::: callout info "Full documentation"
+The complete, searchable documentation lives at
+**[doc.laravel-iam-server.padosoft.com](https://doc.laravel-iam-server.padosoft.com)** — 38+ pages of
+guides, concepts, architecture, best practices and API reference. The pages in this folder are a condensed
+in-repo copy.
+:::
+
 ::: callout tip "One package, five responsibilities"
 An OAuth2/OIDC **identity provider**, a deterministic **policy decision point** (RBAC + ABAC + ReBAC), a
 **tamper-evident audit** log, an **IGA governance** suite, and a React **admin panel** — all driven through

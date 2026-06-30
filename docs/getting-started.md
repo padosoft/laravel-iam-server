@@ -38,13 +38,13 @@ through the Admin API, then approve and apply it:
 
 ```bash
 # 1. submit
-curl -X POST https://iam.example.com/admin/applications/warehouse/manifests \
+curl -X POST https://iam.example.com/api/iam/v1/applications/warehouse/manifests \
   -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
   -d @warehouse-manifest.json
 
 # 2. approve + apply (validated and diffed first)
-curl -X POST https://iam.example.com/admin/manifests/{id}/approve -H "Authorization: Bearer $ADMIN_TOKEN"
-curl -X POST https://iam.example.com/admin/manifests/{id}/apply   -H "Authorization: Bearer $ADMIN_TOKEN"
+curl -X POST https://iam.example.com/api/iam/v1/manifests/{id}/approve -H "Authorization: Bearer $ADMIN_TOKEN"
+curl -X POST https://iam.example.com/api/iam/v1/manifests/{id}/apply   -H "Authorization: Bearer $ADMIN_TOKEN"
 ```
 
 ## Ask your first decision

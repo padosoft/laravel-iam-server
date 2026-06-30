@@ -53,7 +53,7 @@ WebAuthn / passkeys — satisfies AAL2 for step-up.
 
 Sessions are **server-side and revocable** (`Domain/Identity/Session/`): bound to tokens via a `sid`, with
 idle and absolute timeouts, and fail-closed checks. An admin can revoke a single session or all sessions for
-a user through the Admin API (`/admin/sessions/...`).
+a user through the Admin API (`/api/iam/v1/sessions/...`).
 
 ## Assurance
 

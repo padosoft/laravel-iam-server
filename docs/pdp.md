@@ -119,10 +119,10 @@ $decision = app(AuthorizationEngine::class)->check([
 
 The same engine is exposed on the Admin API:
 
-- `POST /admin/decisions/check` — allow/deny.
-- `POST /admin/decisions/explain` — decision with full explanation.
-- `POST /admin/decisions/list-subjects` and `/list-resources` — ReBAC reverse-index ("who can access R?" / "what can S access?").
-- `POST` / `DELETE /admin/relations` — write/revoke ReBAC tuples (idempotent, audited).
+- `POST /api/iam/v1/decisions/check` — allow/deny.
+- `POST /api/iam/v1/decisions/explain` — decision with full explanation.
+- `POST /api/iam/v1/decisions/list-subjects` and `/list-resources` — ReBAC reverse-index ("who can access R?" / "what can S access?").
+- `POST` / `DELETE /api/iam/v1/relations` — write/revoke ReBAC tuples (idempotent, audited).
 
 In consuming apps, prefer [`laravel-iam-client`](https://github.com/padosoft/laravel-iam-client), which calls
 these for you, caches decisions, and exposes an `iam.can` middleware and a Gate adapter.

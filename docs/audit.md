@@ -19,7 +19,7 @@ Each event is hashed and linked to the previous one, forming a chain:
 
 ::: callout tip "Verify the chain"
 ```bash
-curl -X POST https://iam.example.com/admin/audit/verify-chain \
+curl -X POST https://iam.example.com/api/iam/v1/audit/verify-chain \
   -H "Authorization: Bearer $ADMIN_TOKEN"
 ```
 A break means a row was altered or deleted out of band — the log is tamper-evident, not merely append-only.

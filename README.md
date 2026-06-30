@@ -18,6 +18,11 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" alt="License"></a>
 </p>
 
+<p align="center">
+  <strong><a href="https://doc.laravel-iam-server.padosoft.com">📖 Read the documentation →</a></strong><br>
+  <sub>Guides · concepts · architecture · Admin API & PHP reference</sub>
+</p>
+
 ---
 
 ## Why this package
@@ -163,7 +168,7 @@ $decision->requiresStepUp; // true ⇒ ask the user for AAL2 first
 ### 3. Or over HTTP
 
 ```bash
-curl -X POST https://iam.example.com/admin/decisions/check \
+curl -X POST https://iam.example.com/api/iam/v1/decisions/check \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"subject":"user:42","permission":"warehouse:stock.adjust","context":{"amount":500}}'
@@ -186,7 +191,13 @@ curl -X POST https://iam.example.com/admin/decisions/check \
 
 ## Documentation
 
-A docmd doc-site lives in [`docs/`](docs/): start at [`docs/index.md`](docs/index.md), then
+📖 **Full documentation: [doc.laravel-iam-server.padosoft.com](https://doc.laravel-iam-server.padosoft.com)** —
+a searchable docmd site with 38+ pages: quickstart, concepts (RBAC/ABAC/ReBAC, deny-overrides, fail-closed,
+AAL, tamper-evident audit, multi-tenancy), architecture & ADRs, best practices, operations, and a complete
+[Admin API](https://doc.laravel-iam-server.padosoft.com/reference/admin-api) and
+[PHP API](https://doc.laravel-iam-server.padosoft.com/reference/php-api) reference.
+
+A condensed copy lives in [`docs/`](docs/): start at [`docs/index.md`](docs/index.md), then
 [Getting started](docs/getting-started.md), [Concepts](docs/concepts.md), and the subsystem guides —
 [Policy Decision Point](docs/pdp.md), [OAuth2 & OIDC](docs/oauth-oidc.md), [Audit](docs/audit.md),
 [Governance](docs/governance.md), [Admin API](docs/admin-api.md) and [Admin panel](docs/admin-panel.md).

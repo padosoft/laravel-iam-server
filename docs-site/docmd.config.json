@@ -1,0 +1,166 @@
+{
+  "title": "laravel-iam-server",
+  "description": "Server Laravel IAM: identity, organizations, Application Registry + manifest, PDP (RBAC+ABAC+ReBAC), OAuth (league/oauth2-server) + OIDC layer, audit tamper-evident, governance/IGA, Admin API + panel.",
+  "url": "https://doc.laravel-iam-server.padosoft.com",
+  "src": "docs",
+  "out": "_site",
+  "base": "/",
+
+  "favicon": "assets/favicon.svg",
+  "theme": {
+    "name": "default",
+    "defaultMode": "dark",
+    "customCss": ["assets/custom.css"]
+  },
+
+  "autoTitleFromH1": true,
+  "copyCode": true,
+  "pageNavigation": true,
+  "minify": true,
+  "markdown": { "breaks": true },
+
+  "layout": {
+    "spa": true,
+    "header": { "enabled": true },
+    "sidebar": { "collapsible": true, "defaultCollapsed": false },
+    "optionsMenu": {
+      "position": "header",
+      "components": { "search": true, "themeSwitch": true }
+    }
+  },
+
+  "navigation": [
+    {
+      "title": "Get Started",
+      "icon": "rocket",
+      "children": [
+        { "title": "Introduction", "path": "/" },
+        { "title": "Quickstart", "path": "/quickstart" },
+        { "title": "Installation", "path": "/installation" },
+        { "title": "Core concepts", "path": "/core-concepts" }
+      ]
+    },
+    {
+      "title": "Guides",
+      "icon": "book-open",
+      "children": [
+        { "title": "Register an application", "path": "/guides/register-application" },
+        { "title": "Ask the PDP", "path": "/guides/ask-the-pdp" },
+        { "title": "ReBAC relationships", "path": "/guides/rebac-relationships" },
+        { "title": "OAuth2 clients & PKCE", "path": "/guides/oauth-clients" },
+        { "title": "OIDC login", "path": "/guides/oidc-login" },
+        { "title": "Sessions & step-up", "path": "/guides/sessions-and-step-up" },
+        { "title": "Access reviews", "path": "/guides/access-reviews" },
+        { "title": "Access requests", "path": "/guides/access-requests" },
+        { "title": "Webhooks & events", "path": "/guides/webhooks-and-events" }
+      ]
+    },
+    {
+      "title": "Concepts & Theory",
+      "icon": "square-function",
+      "children": [
+        { "title": "Authorization models", "path": "/concepts/authorization-models" },
+        { "title": "Deny-overrides & fail-closed", "path": "/concepts/deny-overrides-fail-closed" },
+        { "title": "Manifests & declared policy", "path": "/concepts/manifests" },
+        { "title": "Assurance levels (AAL)", "path": "/concepts/assurance-aal" },
+        { "title": "Tamper-evident audit", "path": "/concepts/tamper-evident-audit" },
+        { "title": "Multi-tenancy & isolation", "path": "/concepts/multi-tenancy" }
+      ]
+    },
+    {
+      "title": "Architecture",
+      "icon": "workflow",
+      "children": [
+        { "title": "Architecture overview", "path": "/architecture/overview" },
+        { "title": "PDP decision pipeline", "path": "/architecture/pdp-pipeline" },
+        { "title": "OAuth2 & OIDC", "path": "/architecture/oauth-oidc" },
+        { "title": "Data model", "path": "/architecture/data-model" },
+        { "title": "Architecture decisions (ADR)", "path": "/architecture/decisions" }
+      ]
+    },
+    {
+      "title": "Best Practices",
+      "icon": "lightbulb",
+      "children": [
+        { "title": "Fail-closed design", "path": "/best-practices/fail-closed-design" },
+        { "title": "Least-privilege & SoD", "path": "/best-practices/least-privilege-and-sod" },
+        { "title": "Audit & compliance", "path": "/best-practices/audit-and-compliance" },
+        { "title": "Securing the Admin API", "path": "/best-practices/securing-admin-api" }
+      ]
+    },
+    {
+      "title": "Operations",
+      "icon": "settings",
+      "children": [
+        { "title": "Configuration", "path": "/operations/configuration" },
+        { "title": "Deployment", "path": "/operations/deployment" },
+        { "title": "Observability", "path": "/operations/observability" },
+        { "title": "CLI reference", "path": "/operations/cli" },
+        { "title": "Admin panel", "path": "/operations/admin-panel" }
+      ]
+    },
+    {
+      "title": "Reference",
+      "icon": "book-marked",
+      "children": [
+        { "title": "Admin API", "path": "/reference/admin-api" },
+        { "title": "PHP API", "path": "/reference/php-api" },
+        { "title": "Decision contract", "path": "/reference/decision-contract" },
+        { "title": "Permissions & config", "path": "/reference/permissions-and-config" },
+        { "title": "Database schema", "path": "/reference/database-schema" }
+      ]
+    },
+    {
+      "title": "Links",
+      "children": [
+        { "title": "GitHub", "path": "https://github.com/padosoft/laravel-iam-server", "external": true },
+        { "title": "Packagist", "path": "https://packagist.org/packages/padosoft/laravel-iam-server", "external": true }
+      ]
+    }
+  ],
+
+  "footer": {
+    "style": "minimal",
+    "branding": true,
+    "content": "© Lorenzo Padovani — [Padosoft](https://github.com/padosoft) · [GitHub](https://github.com/padosoft/laravel-iam-server) · MIT",
+    "columns": [
+      {
+        "title": "Project",
+        "links": [
+          { "title": "GitHub", "path": "https://github.com/padosoft/laravel-iam-server", "external": true },
+          { "title": "Packagist", "path": "https://packagist.org/packages/padosoft/laravel-iam-server", "external": true }
+        ]
+      },
+      {
+        "title": "Ecosystem",
+        "links": [
+          { "title": "laravel-iam-contracts", "path": "https://github.com/padosoft/laravel-iam-contracts", "external": true },
+          { "title": "laravel-iam-client", "path": "https://github.com/padosoft/laravel-iam-client", "external": true }
+        ]
+      }
+    ]
+  },
+
+  "plugins": {
+    "search": { "enabled": true, "semantic": true, "placeholder": "Search the docs…" },
+    "git": {
+      "repo": "https://github.com/padosoft/laravel-iam-server",
+      "branch": "main",
+      "editLink": true,
+      "lastUpdated": true,
+      "commitHistory": true,
+      "dateFormat": "relative"
+    },
+    "seo": {
+      "defaultDescription": "The self-hostable Identity & Authorization control plane for Laravel: OAuth2/OIDC IdP, a RBAC+ABAC+ReBAC policy decision point, tamper-evident audit, IGA governance and an admin panel.",
+      "aiBots": true,
+      "openGraph": {},
+      "twitter": { "cardType": "summary_large_image" }
+    },
+    "sitemap": { "defaultChangefreq": "weekly", "defaultPriority": 0.8 },
+    "mermaid": {},
+    "math": {},
+    "llms": { "fullContext": true },
+    "analytics": { "enabled": false }
+  }
+}

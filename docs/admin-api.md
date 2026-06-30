@@ -50,7 +50,7 @@ document and fails the build if any route is undocumented. Adding a route means 
 ## Idempotency
 
 ```bash
-curl -X POST https://iam.example.com/admin/manifests/{id}/apply \
+curl -X POST https://iam.example.com/api/iam/v1/manifests/{id}/apply \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
   -H "Idempotency-Key: 7f3c…"     # safe to retry
 ```

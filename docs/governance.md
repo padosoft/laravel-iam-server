@@ -42,7 +42,7 @@ concurrent approvals can't double-grant.
 
 ## Admin API
 
-| Area | Endpoint (prefix `/admin`) |
+| Area | Endpoint (prefix `/api/iam/v1`) |
 | --- | --- |
 | Access reviews | `GET/POST access-reviews/campaigns`, `.../open`, `.../close`, `items/{item}/certify`, `.../revoke` |
 | Access requests | `GET access-requests`, `catalog`, `POST access-requests`, `.../approve`, `.../reject` |
