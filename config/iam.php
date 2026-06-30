@@ -67,6 +67,13 @@ return [
         'audience' => env('IAM_ADMIN_AUDIENCE'),
     ],
 
+    // M17 — Directory module (doc 19 §5). Il server possiede la CONFIG delle sorgenti (CRUD sempre
+    // disponibile); i trigger sync/test sono delegati al modulo padosoft/laravel-iam-directory. Se non
+    // attivo, l'Admin API risponde 409 sui trigger (degradazione pulita, non 500).
+    'directory' => [
+        'enabled' => env('IAM_DIRECTORY_ENABLED', false),
+    ],
+
     // M3 — Crypto/KMS (doc 11)
     'crypto' => [
         'driver' => env('IAM_KMS_DRIVER', 'local'), // local | aws | vault(v2) | azure(v2) | gcp(v2)

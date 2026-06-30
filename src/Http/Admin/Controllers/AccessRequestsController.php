@@ -8,7 +8,9 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Padosoft\Iam\Domain\Governance\Requests\AccessRequestService;
+use Padosoft\Iam\Domain\Governance\Requests\ApproverChainService;
 use Padosoft\Iam\Domain\Governance\Requests\Models\AccessRequest;
+use Padosoft\Iam\Domain\Governance\Requests\Models\ApprovalStep;
 use Padosoft\Iam\Domain\Governance\Requests\RequestCatalog;
 use Padosoft\Iam\Http\Admin\AdminController;
 use Padosoft\Iam\Http\Admin\Support\ApiProblemException;
@@ -23,6 +25,7 @@ final class AccessRequestsController extends AdminController
     public function __construct(
         private readonly AccessRequestService $service,
         private readonly RequestCatalog $catalog,
+        private readonly ApproverChainService $chain,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -87,6 +90,47 @@ final class AccessRequestsController extends AdminController
         return $this->ok($this->summary($model->fresh() ?? $model));
     }
 
+    /** Catena di approvazione (multi-step, doc 19 §9): elenco ordinato degli step. */
+    public function steps(Request $request, string $accessRequest): JsonResponse
+    {
+        $model = $this->find($request, $accessRequest);
+
+        return $this->ok(['steps' => $this->stepSummaries($model)]);
+    }
+
+    public function approveStep(Request $request, string $accessRequest, string $step): JsonResponse
+    {
+        $model = $this->find($request, $accessRequest);
+        $stepModel = $this->findStep($model, $step);
+
+        // InvalidArgument → 422; conflitti (ordine/stato/non-più-pending) → 409 (via runDomain).
+        $grant = $this->runDomain(fn () => $this->chain->approveStep($model, $stepModel, $this->context($request)->actorRef()));
+        $this->audit($request, 'iam.access_request.step_approved', 'access_request', $model->id, [
+            'position' => $stepModel->position, 'grant_id' => $grant?->id,
+        ]);
+
+        return $this->ok([
+            'request' => $this->summary($model->fresh() ?? $model),
+            'steps' => $this->stepSummaries($model),
+            'granted' => $grant !== null,
+        ]);
+    }
+
+    public function rejectStep(Request $request, string $accessRequest, string $step): JsonResponse
+    {
+        $model = $this->find($request, $accessRequest);
+        $stepModel = $this->findStep($model, $step);
+        $note = $request->input('note');
+
+        $this->runDomain(fn () => $this->chain->rejectStep($model, $stepModel, $this->context($request)->actorRef(), is_string($note) ? $note : null));
+        $this->audit($request, 'iam.access_request.step_rejected', 'access_request', $model->id, ['position' => $stepModel->position]);
+
+        return $this->ok([
+            'request' => $this->summary($model->fresh() ?? $model),
+            'steps' => $this->stepSummaries($model),
+        ]);
+    }
+
     private function find(Request $request, string $id): AccessRequest
     {
         $model = AccessRequest::query()->find($id);
@@ -96,6 +140,35 @@ final class AccessRequestsController extends AdminController
         }
 
         return $model;
+    }
+
+    private function findStep(AccessRequest $req, string $step): ApprovalStep
+    {
+        $model = ApprovalStep::query()->whereKey($step)->where('access_request_id', $req->id)->first();
+        if ($model === null) {
+            throw ApiProblemException::notFound("Step \"{$step}\" non trovato per questa richiesta.");
+        }
+
+        return $model;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function stepSummaries(AccessRequest $req): array
+    {
+        $out = [];
+        $steps = ApprovalStep::query()->where('access_request_id', $req->id)->orderBy('position')->get();
+        foreach ($steps as $s) {
+            $out[] = [
+                'id' => $s->id, 'position' => $s->position,
+                'approver_type' => $s->approver_type, 'approver_ref' => $s->approver_ref,
+                'status' => $s->status, 'decided_by' => $s->decided_by,
+                'decided_at' => $s->decided_at?->toIso8601String(),
+            ];
+        }
+
+        return $out;
     }
 
     /**
