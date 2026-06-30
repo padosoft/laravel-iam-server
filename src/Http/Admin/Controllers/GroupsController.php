@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Padosoft\Iam\Http\Admin\Controllers;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
@@ -142,7 +143,9 @@ final class GroupsController extends AdminController
     private function find(Request $request, string $group): Group
     {
         $org = $this->context($request)->organizationId;
-        $model = Group::query()->where('key', $group)->first() ?? Group::query()->find($group);
+        // Lookup per key scoped sull'org (l'unique è (organization_id, key)): niente shadowing cross-tenant.
+        $model = Group::query()->when($org !== null, fn (Builder $q) => $q->where('organization_id', $org))->where('key', $group)->first()
+            ?? Group::query()->find($group);
         if ($model === null || ($org !== null && $model->organization_id !== $org)) {
             throw ApiProblemException::notFound("Gruppo \"{$group}\" non trovato.");
         }

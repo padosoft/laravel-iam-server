@@ -47,6 +47,9 @@ final class MetricsController extends AdminController
         $total = $base()->count();
 
         return $this->ok([
+            // Stima derivata dagli eventi di audit (non un decision-log dedicato del PDP): allow/deny
+            // sono inferiti dal suffisso event_type. Per dashboard, non per conteggi PDP esatti.
+            'source' => 'audit_events_estimate',
             'window' => ['from' => $from->toIso8601String(), 'to' => $to->toIso8601String()],
             'total' => $total,
             'allow' => max(0, $total - $denied),

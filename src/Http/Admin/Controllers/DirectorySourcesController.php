@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace Padosoft\Iam\Http\Admin\Controllers;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Padosoft\Iam\Contracts\Crypto\SecretCipher;
 use Padosoft\Iam\Domain\Directory\Models\DirectorySource;
 use Padosoft\Iam\Http\Admin\AdminController;
@@ -46,24 +48,29 @@ final class DirectorySourcesController extends AdminController
         }
 
         try {
-            $source = DirectorySource::create([
-                'organization_id' => $this->context($request)->organizationId,
-                'key' => $key,
-                'name' => $this->requiredString($request, 'name'),
-                'type' => is_string($type) ? $type : 'ldap',
-                'host' => $this->requiredString($request, 'host'),
-                'base_dn' => $this->requiredString($request, 'base_dn'),
-                'bind_dn' => $this->nullableString($request, 'bind_dn'),
-                'filters' => is_array($request->input('filters')) ? $request->input('filters') : null,
-                'group_mapping_ref' => $this->nullableString($request, 'group_mapping_ref'),
-                'sync_mode' => $this->nullableString($request, 'sync_mode') ?? 'jit',
-                'status' => $this->nullableString($request, 'status') ?? 'active',
-            ]);
+            // Atomico: source + secret insieme. Se writeSecret fallisce, la source non resta orfana.
+            $source = DB::transaction(function () use ($request, $key, $type): DirectorySource {
+                $source = DirectorySource::create([
+                    'organization_id' => $this->context($request)->organizationId,
+                    'key' => $key,
+                    'name' => $this->requiredString($request, 'name'),
+                    'type' => is_string($type) ? $type : 'ldap',
+                    'host' => $this->requiredString($request, 'host'),
+                    'base_dn' => $this->requiredString($request, 'base_dn'),
+                    'bind_dn' => $this->nullableString($request, 'bind_dn'),
+                    'filters' => is_array($request->input('filters')) ? $request->input('filters') : null,
+                    'group_mapping_ref' => $this->nullableString($request, 'group_mapping_ref'),
+                    'sync_mode' => $this->nullableString($request, 'sync_mode') ?? 'jit',
+                    'status' => $this->nullableString($request, 'status') ?? 'active',
+                ]);
+                $this->writeSecret($source, $request->input('bind_secret'));
+
+                return $source;
+            });
         } catch (UniqueConstraintViolationException) {
             throw ApiProblemException::conflict("Directory source con key \"{$key}\" già esistente.");
         }
 
-        $this->writeSecret($source, $request->input('bind_secret'));
         $this->audit($request, 'iam.directory_source.created', 'directory_source', $source->id, ['key' => $key]);
 
         return $this->ok($this->summary($source), 201);
@@ -157,7 +164,9 @@ final class DirectorySourcesController extends AdminController
     private function find(Request $request, string $source): DirectorySource
     {
         $org = $this->context($request)->organizationId;
-        $model = DirectorySource::query()->where('key', $source)->first() ?? DirectorySource::query()->find($source);
+        // Lookup per key scoped sull'org (l'unique è (organization_id, key)): niente shadowing cross-tenant.
+        $model = DirectorySource::query()->when($org !== null, fn (Builder $q) => $q->where('organization_id', $org))->where('key', $source)->first()
+            ?? DirectorySource::query()->find($source);
         if ($model === null || ($org !== null && $model->organization_id !== $org)) {
             throw ApiProblemException::notFound("Directory source \"{$source}\" non trovato.");
         }

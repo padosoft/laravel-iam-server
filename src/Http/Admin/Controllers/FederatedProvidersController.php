@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace Padosoft\Iam\Http\Admin\Controllers;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Padosoft\Iam\Contracts\Crypto\SecretCipher;
 use Padosoft\Iam\Domain\Identity\Models\FederatedProvider;
 use Padosoft\Iam\Http\Admin\AdminController;
@@ -44,23 +46,28 @@ final class FederatedProvidersController extends AdminController
         }
 
         try {
-            $provider = FederatedProvider::create([
-                'organization_id' => $this->context($request)->organizationId,
-                'key' => $key,
-                'driver' => $driver,
-                'client_id' => $this->nullableString($request, 'client_id'),
-                'redirect_uri' => $this->nullableString($request, 'redirect_uri'),
-                'scopes' => $this->arrayInput($request, 'scopes'),
-                'options' => $this->arrayInput($request, 'options'),
-                'auto_link_policy' => $this->nullableString($request, 'auto_link_policy') ?? 'verified_email',
-                'jit_policy' => $this->arrayInput($request, 'jit_policy'),
-                'status' => $this->nullableString($request, 'status') ?? 'active',
-            ]);
+            // Atomico: provider + secret insieme. Se writeSecret fallisce, il provider non resta orfano.
+            $provider = DB::transaction(function () use ($request, $key, $driver): FederatedProvider {
+                $provider = FederatedProvider::create([
+                    'organization_id' => $this->context($request)->organizationId,
+                    'key' => $key,
+                    'driver' => $driver,
+                    'client_id' => $this->nullableString($request, 'client_id'),
+                    'redirect_uri' => $this->nullableString($request, 'redirect_uri'),
+                    'scopes' => $this->arrayInput($request, 'scopes'),
+                    'options' => $this->arrayInput($request, 'options'),
+                    'auto_link_policy' => $this->nullableString($request, 'auto_link_policy') ?? 'verified_email',
+                    'jit_policy' => $this->arrayInput($request, 'jit_policy'),
+                    'status' => $this->nullableString($request, 'status') ?? 'active',
+                ]);
+                $this->writeSecret($provider, $request->input('client_secret'));
+
+                return $provider;
+            });
         } catch (UniqueConstraintViolationException) {
             throw ApiProblemException::conflict("Provider con key \"{$key}\" già esistente.");
         }
 
-        $this->writeSecret($provider, $request->input('client_secret'));
         $this->audit($request, 'iam.federated_provider.created', 'federated_provider', $provider->id, ['key' => $key, 'driver' => $driver]);
 
         return $this->ok($this->summary($provider), 201);
@@ -149,7 +156,9 @@ final class FederatedProvidersController extends AdminController
     private function find(Request $request, string $provider): FederatedProvider
     {
         $org = $this->context($request)->organizationId;
-        $model = FederatedProvider::query()->where('key', $provider)->first() ?? FederatedProvider::query()->find($provider);
+        // Lookup per key scoped sull'org (l'unique è (organization_id, key)): niente shadowing cross-tenant.
+        $model = FederatedProvider::query()->when($org !== null, fn (Builder $q) => $q->where('organization_id', $org))->where('key', $provider)->first()
+            ?? FederatedProvider::query()->find($provider);
         if ($model === null || ($org !== null && $model->organization_id !== $org)) {
             throw ApiProblemException::notFound("Provider \"{$provider}\" non trovato.");
         }

@@ -33,30 +33,34 @@ final class GroupMembershipService
      */
     public function addMember(Group $group, string $memberType, string $memberId, ?string $actor = null): GroupMember
     {
-        DB::table('iam_group_members')->insertOrIgnore([
-            'id' => (string) Str::ulid(),
-            'group_id' => $group->id,
-            'member_type' => $memberType,
-            'member_id' => $memberId,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+        // Atomico: la riga membership e la tupla ReBAC devono restare coerenti. Se la grant() fallisce
+        // la transazione annulla anche l'insert → niente stato parziale (membro senza tupla `member`).
+        return DB::transaction(function () use ($group, $memberType, $memberId, $actor): GroupMember {
+            DB::table('iam_group_members')->insertOrIgnore([
+                'id' => (string) Str::ulid(),
+                'group_id' => $group->id,
+                'member_type' => $memberType,
+                'member_id' => $memberId,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
 
-        // Tupla ReBAC: (membro) —member→ (group:<key>). RelationWriter è idempotente (dedup identity_hash).
-        $this->relations->grant(
-            new SubjectRef($memberType, $memberId),
-            'member',
-            new ResourceRef('group', $group->key),
-            null,
-            $group->organization_id,
-            $actor,
-        );
+            // Tupla ReBAC: (membro) —member→ (group:<key>). RelationWriter è idempotente (dedup identity_hash).
+            $this->relations->grant(
+                new SubjectRef($memberType, $memberId),
+                'member',
+                new ResourceRef('group', $group->key),
+                null,
+                $group->organization_id,
+                $actor,
+            );
 
-        return GroupMember::query()
-            ->where('group_id', $group->id)
-            ->where('member_type', $memberType)
-            ->where('member_id', $memberId)
-            ->firstOrFail();
+            return GroupMember::query()
+                ->where('group_id', $group->id)
+                ->where('member_type', $memberType)
+                ->where('member_id', $memberId)
+                ->firstOrFail();
+        });
     }
 
     /**
@@ -64,22 +68,25 @@ final class GroupMembershipService
      */
     public function removeMember(Group $group, string $memberType, string $memberId): bool
     {
-        $deleted = GroupMember::query()
-            ->where('group_id', $group->id)
-            ->where('member_type', $memberType)
-            ->where('member_id', $memberId)
-            ->delete();
+        // Atomico (simmetrico ad addMember): delete della membership e revoca della tupla insieme.
+        return DB::transaction(function () use ($group, $memberType, $memberId): bool {
+            $deleted = GroupMember::query()
+                ->where('group_id', $group->id)
+                ->where('member_type', $memberType)
+                ->where('member_id', $memberId)
+                ->delete();
 
-        // Revoca la tupla a prescindere (idempotente): membership e ReBAC restano coerenti anche se uno
-        // dei due lati era già assente.
-        $this->relations->revoke(
-            new SubjectRef($memberType, $memberId),
-            'member',
-            new ResourceRef('group', $group->key),
-            $group->organization_id,
-        );
+            // Revoca la tupla a prescindere (idempotente): membership e ReBAC restano coerenti anche se
+            // uno dei due lati era già assente.
+            $this->relations->revoke(
+                new SubjectRef($memberType, $memberId),
+                'member',
+                new ResourceRef('group', $group->key),
+                $group->organization_id,
+            );
 
-        return $deleted > 0;
+            return $deleted > 0;
+        });
     }
 
     /**

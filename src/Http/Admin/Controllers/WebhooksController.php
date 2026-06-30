@@ -7,6 +7,7 @@ namespace Padosoft\Iam\Http\Admin\Controllers;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Padosoft\Iam\Contracts\Crypto\SecretCipher;
 use Padosoft\Iam\Domain\Audit\Models\AuditEvent;
@@ -175,8 +176,13 @@ final class WebhooksController extends AdminController
             throw ApiProblemException::conflict('Solo una delivery in DLQ (failed) può essere riprodotta.');
         }
 
-        $model->forceFill(['status' => 'retrying', 'next_retry_at' => now()])->save();
-        $retried = $this->retrier->retryDue();
+        // Atomico: se il retrier solleva, lo stato 'retrying' viene annullato → la delivery resta
+        // 'failed' e ri-riproducibile (niente blocco permanente in 'retrying').
+        $retried = DB::transaction(function () use ($model): int {
+            $model->forceFill(['status' => 'retrying', 'next_retry_at' => now()])->save();
+
+            return $this->retrier->retryDue();
+        });
 
         $this->audit($request, 'iam.webhook.delivery_replayed', 'webhook_delivery', $model->id, []);
 
