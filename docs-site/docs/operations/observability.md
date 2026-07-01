@@ -22,15 +22,32 @@ readiness probe so traffic only arrives once the server can actually serve decis
 
 ## Tracing
 
-The server emits traces through a pluggable `Tracer` interface with two shipped implementations:
+The server emits traces through a pluggable `Tracer` interface. Pick one with `IAM_TRACER`:
 
-| Implementation | Use |
-|---|---|
-| `NullTracer` | default — no overhead |
-| `LogTracer` | writes spans to the Laravel log |
+| `IAM_TRACER` | Implementation | Use |
+|---|---|---|
+| `null` *(default)* | `NullTracer` | no overhead |
+| `log` | `LogTracer` | writes spans to the Laravel log (a collector/Filebeat ships them on) |
+| `otlp` | `OtlpTracer` | **native OTLP/HTTP push** straight to an OpenTelemetry collector |
+| `stack` | `StackTracer` | **both** — local log **and** OTLP push |
 
-Swap in your own `Tracer` (binding the contract) to forward spans to OpenTelemetry or your APM. Tracing the
-PDP decision path is especially useful for latency and for explaining slow decisions.
+::: callout tip "Native OTLP — no SDK, no gRPC, no hot-path latency" icon:radar
+`otlp`/`stack` export spans to `POST {IAM_OTEL_ENDPOINT}/v1/traces` as OTLP/HTTP **JSON** — no heavy
+OpenTelemetry SDK and no gRPC required. Spans are buffered during the request and flushed as one batch on
+`terminating`, so tracing never adds a round-trip to a PDP decision. Export is best-effort: a down collector
+never affects the app. Point `IAM_OTEL_ENDPOINT` at the collector's HTTP receiver (port **4318**):
+```dotenv
+IAM_TRACER=otlp                 # or `stack` to also keep local logs
+IAM_OTEL_ENDPOINT=http://otel-collector.observability.svc.cluster.local:4318
+IAM_OTEL_SERVICE_NAME=laravel-iam-console   # optional, defaults to app.name
+IAM_OTEL_TIMEOUT=5
+```
+gRPC (4317) isn't supported directly — use the collector's HTTP endpoint, or a sidecar. And the endpoint must
+be reachable from where the app runs (a `*.svc.cluster.local` address only resolves inside the cluster).
+:::
+
+You can also bind your own `Tracer` to forward to any APM. Tracing the PDP decision path is especially useful
+for latency and for explaining slow decisions.
 
 ## Metrics endpoints
 

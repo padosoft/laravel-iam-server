@@ -95,8 +95,15 @@ return [
     // M14 — Observability / deploy base. Tracer: null (default, zero deps) | log (span/errori →
     // canale di log strutturato, spedito a OTLP/ELK da un collector). Health/ready non autenticati.
     'observability' => [
-        'tracer' => env('IAM_TRACER', 'null'),       // null | log
+        // null (default, zero deps) | log (span → canale di log strutturato) | otlp (push nativo al
+        // collector OpenTelemetry via OTLP/HTTP JSON) | stack (log + otlp insieme).
+        'tracer' => env('IAM_TRACER', 'null'),
         'log_channel' => env('IAM_TRACER_CHANNEL'),  // null = canale di default
+        // OTLP nativo (tracer 'otlp' o 'stack'). Endpoint = base del collector OTLP/HTTP (porta 4318);
+        // il tracer aggiunge /v1/traces. gRPC (4317) non supportato: usa l'endpoint HTTP.
+        'otel_endpoint' => env('IAM_OTEL_ENDPOINT'),          // es. http://otel-collector.observability.svc.cluster.local:4318
+        'otel_service_name' => env('IAM_OTEL_SERVICE_NAME'),  // vuoto = app.name
+        'otel_timeout' => (int) env('IAM_OTEL_TIMEOUT', 5),   // secondi (flush best-effort)
         'register_health_routes' => true,
     ],
 

@@ -50,6 +50,8 @@ use Padosoft\Iam\Http\Admin\Support\AdminActorResolver;
 use Padosoft\Iam\Http\Admin\Support\TokenAdminActorResolver;
 use Padosoft\Iam\Observability\LogTracer;
 use Padosoft\Iam\Observability\NullTracer;
+use Padosoft\Iam\Observability\OtlpTracer;
+use Padosoft\Iam\Observability\StackTracer;
 use Padosoft\Iam\Observability\Tracer;
 use Spatie\LaravelPackageTools\Package;
 use Spatie\LaravelPackageTools\PackageServiceProvider;
@@ -93,15 +95,25 @@ final class IamServiceProvider extends PackageServiceProvider
         // M2: PDP engine nativo (RBAC+ABAC, deny-overrides) come AuthorizationEngine.
         $this->app->bind(AuthorizationEngine::class, NativeSqlEngine::class);
 
-        // M14: telemetria. Default NullTracer (zero deps); `log` esporta span/errori su un canale
-        // strutturato per OTLP/ELK. Un'app può rimpiazzare il binding con un esportatore OTLP reale.
+        // M14: telemetria. null (default, zero deps) | log (canale strutturato) | otlp (push nativo al
+        // collector OpenTelemetry) | stack (log + otlp). Il tracing non altera mai il flusso di business.
         $this->app->singleton(Tracer::class, function (): Tracer {
-            if (config('iam.observability.tracer') !== 'log') {
-                return new NullTracer;
-            }
-            $channel = config('iam.observability.log_channel');
+            $driver = config('iam.observability.tracer', 'null');
 
-            return new LogTracer($this->app->make('log')->channel(is_string($channel) && $channel !== '' ? $channel : null));
+            $tracer = match ($driver) {
+                'log' => $this->makeLogTracer(),
+                'otlp' => $this->makeOtlpTracer(),
+                'stack' => new StackTracer($this->makeLogTracer(), $this->makeOtlpTracer()),
+                default => new NullTracer,
+            };
+
+            // Buffered exporters (otlp/stack) flush their batch at the end of the request/command, so
+            // tracing never adds a network round-trip to the hot path (e.g. a PDP decision).
+            if ($tracer instanceof OtlpTracer || $tracer instanceof StackTracer) {
+                $this->app->terminating(static fn () => $tracer->flush());
+            }
+
+            return $tracer;
         });
 
         // M8: primitiva FeatureScope (governance accendibile/granulare via config).
@@ -167,6 +179,30 @@ final class IamServiceProvider extends PackageServiceProvider
     }
 
     /** Chiave di cifratura league per auth code/refresh; in prod obbligatoria, in dev derivata da APP_KEY. */
+    private function makeLogTracer(): LogTracer
+    {
+        $channel = config('iam.observability.log_channel');
+
+        return new LogTracer($this->app->make('log')->channel(is_string($channel) && $channel !== '' ? $channel : null));
+    }
+
+    private function makeOtlpTracer(): Tracer
+    {
+        $endpoint = config('iam.observability.otel_endpoint');
+        if (!is_string($endpoint) || $endpoint === '') {
+            return new NullTracer; // no collector configured → no-op, never a misconfigured export.
+        }
+
+        $service = config('iam.observability.otel_service_name');
+        if (!is_string($service) || $service === '') {
+            $appName = config('app.name');
+            $service = is_string($appName) && $appName !== '' ? $appName : 'laravel-iam';
+        }
+        $timeout = config('iam.observability.otel_timeout');
+
+        return new OtlpTracer($endpoint, $service, is_numeric($timeout) ? (int) $timeout : 5);
+    }
+
     private function resolveOauthEncryptionKey(): string
     {
         $configured = config('iam.oauth.encryption_key');

@@ -72,7 +72,8 @@ Hash-chain and PII settings, including `ip_mode` (whether/how client IPs are sto
 [Tamper-evident audit](/concepts/tamper-evident-audit).
 
 ### observability
-Health/readiness and the tracer (`NullTracer` / `LogTracer`). See [Observability](/operations/observability).
+Health/readiness and the tracer: `IAM_TRACER` = `null` | `log` | `otlp` (native OTLP/HTTP push to a
+collector via `IAM_OTEL_ENDPOINT`) | `stack` (log + otlp). See [Observability](/operations/observability).
 
 ### governance · ai · mcp · integrations
 Top-level toggles for the governance suite, the optional AI module
