@@ -41,6 +41,22 @@
       ]
     },
     {
+      "title": "Tutorial — zero to working",
+      "icon": "graduation-cap",
+      "children": [
+        { "title": "Overview & prerequisites", "path": "/tutorial" },
+        { "title": "01 · Install the server", "path": "/tutorial/01-install-server" },
+        { "title": "02 · Configure", "path": "/tutorial/02-configure" },
+        { "title": "03 · First users, roles & permissions", "path": "/tutorial/03-first-users-roles" },
+        { "title": "04 · Register an application", "path": "/tutorial/04-register-app" },
+        { "title": "05 · Assign access with Grants", "path": "/tutorial/05-assign-roles" },
+        { "title": "06 · Connect a client", "path": "/tutorial/06-connect-client" },
+        { "title": "07 · OIDC / OAuth login", "path": "/tutorial/07-login-oidc" },
+        { "title": "08 · Verify everything works", "path": "/tutorial/08-verify-and-next" },
+        { "title": "Troubleshooting", "path": "/tutorial/troubleshooting" }
+      ]
+    },
+    {
       "title": "Guides",
       "icon": "book-open",
       "children": [

@@ -202,6 +202,12 @@ flowchart LR
 
 **[→ Quickstart](/quickstart)** · **[→ Installation](/installation)** · **[→ Core concepts](/core-concepts)**
 
+::: callout success "New to Laravel IAM? Follow the full walkthrough" icon:graduation-cap
+🚀 **[Full walkthrough: from zero to a working, tested IAM →](/tutorial)** — one continuous, junior-proof path:
+install the server and every package, create your first users, define roles and permissions, register an
+application, assign access, connect a client, and prove a real ALLOW/DENY decision end to end.
+:::
+
 ---
 
 ## Ecosystem
