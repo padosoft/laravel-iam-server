@@ -53,6 +53,7 @@
         { "title": "06 · Connect a client", "path": "/tutorial/06-connect-client" },
         { "title": "07 · OIDC / OAuth login", "path": "/tutorial/07-login-oidc" },
         { "title": "08 · Verify everything works", "path": "/tutorial/08-verify-and-next" },
+        { "title": "09 · Deploy on Laravel Cloud", "path": "/tutorial/09-deploy-on-laravel-cloud" },
         { "title": "Troubleshooting", "path": "/tutorial/troubleshooting" }
       ]
     },

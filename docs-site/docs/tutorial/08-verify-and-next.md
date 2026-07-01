@@ -128,3 +128,7 @@ is still healthy.
 :::
 
 Congratulations — you went from zero to a working, tested IAM. 🎉
+
+**Ready to host it?** Turn this local setup into a real server your apps can use:
+
+**[→ Step 09 · Deploy your own server on Laravel Cloud](/tutorial/09-deploy-on-laravel-cloud)**
