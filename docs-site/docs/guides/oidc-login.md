@@ -28,22 +28,33 @@ The discovery document advertises the authorization, token and JWKS URLs; client
 
 ## The login flow
 
+Login is an **authentication** flow your *consuming app* runs against the server as an IdP. Be precise about
+the division of labour: `laravel-iam-client` is **not** part of the login handshake — it handles
+*authorization* (PDP decisions) once a user is already logged in. The app performs the standard
+authorization-code + PKCE flow (with any OIDC/OAuth2 library, e.g. Laravel Socialite pointed at the discovery
+document); the server's **login backend** (Fortify / Socialite / passkeys — `suggest` dependencies)
+authenticates the user; the app then verifies the returned `id_token` and logs the user in locally.
+
 ```mermaid
 sequenceDiagram
     participant App as Consuming app
-    participant Client as laravel-iam-client
-    participant IdP as laravel-iam-server
-    App->>Client: redirect to login
-    Client->>IdP: authorization-code + PKCE
-    IdP-->>Client: id_token + access_token
-    Client->>IdP: fetch JWKS (cached)
-    Client->>Client: verify id_token signature & claims
-    Client-->>App: authenticated user (claims)
+    participant IdP as laravel-iam-server (IdP)
+    participant User
+    App->>App: build code_verifier + code_challenge (S256)
+    App->>IdP: GET /oauth/authorize (client_id, code_challenge)
+    IdP->>User: login screen (login backend: Fortify / Socialite / passkey)
+    User->>IdP: authenticate (records the AAL)
+    IdP-->>App: redirect to redirect_uri with code
+    App->>IdP: POST /oauth/token (code + code_verifier)
+    IdP-->>App: id_token + access_token (ES256)
+    App->>IdP: fetch JWKS, verify id_token signature & claims
+    App->>App: Auth::login($user) — the app now has an authenticated user
 ```
 
-In a consuming app you do **not** implement this by hand — install
-[`laravel-iam-client`](https://doc.laravel-iam-client.padosoft.com), which handles the redirect, the PKCE
-exchange, JWKS verification and claim mapping, then exposes the authenticated user to your app.
+You don't hand-roll the crypto — use an OIDC/OAuth2 client library that consumes the discovery document. Once
+the user is authenticated, [`laravel-iam-client`](https://doc.laravel-iam-client.padosoft.com) takes over for
+**authorization**: `iam.auth` sees the authenticated user and `iam.can` checks their grants against the PDP.
+The end-to-end [tutorial](/tutorial/07-login-oidc) walks the whole flow step by step.
 
 ## Federated identities
 
@@ -60,9 +71,9 @@ same rotating ES256 keys as access tokens.
 
 ::: callout warning "Verify, don't trust" icon:shield
 Always verify the `id_token` signature against JWKS and check `iss`, `aud` and `exp` before trusting any
-claim. `laravel-iam-client` does this for you; if you integrate a non-PHP client, use one of the SDKs
-([Node](https://doc.laravel-iam-node.padosoft.com), [Rust](https://doc.laravel-iam-rust.padosoft.com)),
-which are fail-closed.
+claim. Your OIDC client library must do this at login time. If you integrate a non-PHP app, the SDKs
+([Node](https://doc.laravel-iam-node.padosoft.com), [Rust](https://doc.laravel-iam-rust.padosoft.com))
+verify tokens fail-closed for you.
 :::
 
 ## Next
