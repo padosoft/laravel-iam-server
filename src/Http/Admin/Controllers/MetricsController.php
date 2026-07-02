@@ -103,14 +103,19 @@ final class MetricsController extends AdminController
             $byStatus[$status] = (clone $scoped())->where('status', $status)->count();
         }
 
-        // Live sessions = non-revoked and not past their absolute timeout; distinct users.
-        $activeSessions = Session::query()
+        // Distinct users with at least one live (non-revoked, not past absolute timeout) session — a
+        // user with N sessions counts once, hence the explicit key name.
+        $usersWithActiveSessions = Session::query()
             ->whereNull('revoked_at')
             ->where('absolute_expires_at', '>', now())
             ->when($org !== null, fn (Builder $q) => $q->where('organization_id', $org))
             ->distinct()
             ->count('user_id');
 
+        // Login activity from the audit stream. Counts + last_login_at are within the metrics window
+        // (bounded, consistent with the sibling endpoints; the window is echoed in the response). The
+        // host emits auth.login.*/auth.stepup.* — global events, so an org-bound admin sees them only if
+        // the emitter tags organization_id; the console operates as a global admin (org null), so it does.
         $logins = fn (string $type): int => $this->auditWindow($from, $to, $org, null)
             ->where('event_type', $type)->count();
         $lastLogin = $this->auditWindow($from, $to, $org, null)
@@ -120,7 +125,7 @@ final class MetricsController extends AdminController
             'window' => ['from' => $from->toIso8601String(), 'to' => $to->toIso8601String()],
             'total' => $scoped()->count(),
             'by_status' => $byStatus,
-            'active_sessions' => $activeSessions,
+            'users_with_active_sessions' => $usersWithActiveSessions,
             'logins' => [
                 'succeeded' => $logins('auth.login.succeeded'),
                 'failed' => $logins('auth.login.failed'),

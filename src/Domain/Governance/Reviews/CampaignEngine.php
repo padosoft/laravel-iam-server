@@ -171,11 +171,17 @@ final class CampaignEngine
      */
     public function cancel(ReviewCampaign $campaign): void
     {
-        if (!in_array($campaign->status, ['draft', 'running'], true)) {
-            throw new \RuntimeException("Campagna {$campaign->id} in stato {$campaign->status}: non annullabile.");
-        }
+        // Transazione + lock di riga + ricontrollo dello stato SOTTO il lock: due transizioni concorrenti
+        // sulla stessa campagna non possono entrambe passare il guard (no last-write-wins sullo stato).
+        DB::transaction(function () use ($campaign): void {
+            $locked = ReviewCampaign::query()->whereKey($campaign->id)->lockForUpdate()->first();
+            $state = $locked->status ?? 'inesistente';
+            if ($locked === null || !in_array($state, ['draft', 'running'], true)) {
+                throw new \RuntimeException("Campagna {$campaign->id} in stato {$state}: non annullabile.");
+            }
 
-        $campaign->forceFill(['status' => 'cancelled', 'closed_at' => now()])->save();
+            $locked->forceFill(['status' => 'cancelled', 'closed_at' => now()])->save();
+        });
     }
 
     /**
