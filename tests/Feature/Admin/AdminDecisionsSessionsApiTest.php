@@ -104,6 +104,19 @@ it('sessions: elenca e revoca una sessione (audit + idempotente)', function () {
         ->and(AuditEvent::query()->where('event_type', 'iam.session.revoked')->where('target_id', $s->id)->exists())->toBeTrue();
 });
 
+it('sessions: il summary espone last_active_at (alias) e i campi step-up/created/revoked_reason', function () {
+    grantAdmin('adm', ['iam:sessions.read']);
+    $s = makeSession(['step_up_at' => now()]);
+
+    $res = $this->getJson('/api/iam/v1/sessions', ['X-Test-Auth' => 'adm'])->assertOk();
+
+    expect($res->json('data.0.id'))->toBe($s->id)
+        ->and($res->json('data.0.last_active_at'))->toBe($res->json('data.0.last_activity_at'))
+        ->and($res->json('data.0.last_active_at'))->not->toBeNull()
+        ->and($res->json('data.0.step_up_at'))->not->toBeNull()
+        ->and($res->json('data.0'))->toHaveKeys(['created_at', 'revoked_reason']);
+});
+
 it('sessions/revoke-all revoca tutte le sessioni attive di un utente', function () {
     grantAdmin('adm', ['iam:sessions.manage']);
     makeSession(['user_id' => 'usr_z']);
