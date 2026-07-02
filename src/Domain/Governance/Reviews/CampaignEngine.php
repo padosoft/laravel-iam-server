@@ -164,6 +164,27 @@ final class CampaignEngine
     }
 
     /**
+     * Annulla una campagna ancora aperta (draft o running) SENZA applicare on_unconfirmed: nessun grant
+     * viene toccato e gli item restano come sono. È una terminazione soft — non un hard-delete: la storia
+     * della campagna e dei suoi item resta consultabile (invariante IGA: niente cancellazione di evidenze).
+     * Una campagna completed/expired/cancelled non è ri-annullabile (fail-closed).
+     */
+    public function cancel(ReviewCampaign $campaign): void
+    {
+        // Transazione + lock di riga + ricontrollo dello stato SOTTO il lock: due transizioni concorrenti
+        // sulla stessa campagna non possono entrambe passare il guard (no last-write-wins sullo stato).
+        DB::transaction(function () use ($campaign): void {
+            $locked = ReviewCampaign::query()->whereKey($campaign->id)->lockForUpdate()->first();
+            $state = $locked->status ?? 'inesistente';
+            if ($locked === null || !in_array($state, ['draft', 'running'], true)) {
+                throw new \RuntimeException("Campagna {$campaign->id} in stato {$state}: non annullabile.");
+            }
+
+            $locked->forceFill(['status' => 'cancelled', 'closed_at' => now()])->save();
+        });
+    }
+
+    /**
      * Reviewer ancora da sollecitare: i soggetti distinti con almeno un item pending.
      *
      * @return list<string>

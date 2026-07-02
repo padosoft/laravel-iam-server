@@ -12,6 +12,9 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Padosoft\Iam\Domain\Audit\Models\AuditEvent;
 use Padosoft\Iam\Domain\Authorization\Models\Grant;
+use Padosoft\Iam\Domain\Identity\Models\Session;
+use Padosoft\Iam\Domain\Identity\Models\User;
+use Padosoft\Iam\Domain\Organizations\Models\Membership;
 use Padosoft\Iam\Http\Admin\AdminController;
 
 /**
@@ -76,6 +79,59 @@ final class MetricsController extends AdminController
             'stale' => (clone $scoped())->active()->where(function (Builder $q) use ($staleBefore): void {
                 $q->whereNull('last_used_at')->orWhere('last_used_at', '<', $staleBefore);
             })->count(),
+        ]);
+    }
+
+    /**
+     * User inventory + login activity (doc 16 §3.1). Counts over the identity store (total + by status)
+     * and live sessions, plus login/step-up activity derived from the audit stream (the host emits
+     * `auth.login.succeeded|failed` / `auth.stepup.failed`). Tenant-scoped: an org-bound admin sees only
+     * users that are members of its org; a global admin sees the whole store. Bounded like the others.
+     */
+    public function users(Request $request): JsonResponse
+    {
+        [$from, $to] = $this->window($request);
+        $org = $this->context($request)->organizationId;
+
+        $scoped = fn (): Builder => User::query()->when(
+            $org !== null,
+            fn (Builder $q) => $q->whereIn('id', Membership::query()->where('organization_id', $org)->select('user_id')),
+        );
+
+        $byStatus = [];
+        foreach (['active', 'suspended', 'deactivated'] as $status) {
+            $byStatus[$status] = (clone $scoped())->where('status', $status)->count();
+        }
+
+        // Distinct users with at least one live (non-revoked, not past absolute timeout) session — a
+        // user with N sessions counts once, hence the explicit key name.
+        $usersWithActiveSessions = Session::query()
+            ->whereNull('revoked_at')
+            ->where('absolute_expires_at', '>', now())
+            ->when($org !== null, fn (Builder $q) => $q->where('organization_id', $org))
+            ->distinct()
+            ->count('user_id');
+
+        // Login activity from the audit stream. Counts + last_login_at are within the metrics window
+        // (bounded, consistent with the sibling endpoints; the window is echoed in the response). The
+        // host emits auth.login.*/auth.stepup.* — global events, so an org-bound admin sees them only if
+        // the emitter tags organization_id; the console operates as a global admin (org null), so it does.
+        $logins = fn (string $type): int => $this->auditWindow($from, $to, $org, null)
+            ->where('event_type', $type)->count();
+        $lastLogin = $this->auditWindow($from, $to, $org, null)
+            ->where('event_type', 'auth.login.succeeded')->max('occurred_at');
+
+        return $this->ok([
+            'window' => ['from' => $from->toIso8601String(), 'to' => $to->toIso8601String()],
+            'total' => $scoped()->count(),
+            'by_status' => $byStatus,
+            'users_with_active_sessions' => $usersWithActiveSessions,
+            'logins' => [
+                'succeeded' => $logins('auth.login.succeeded'),
+                'failed' => $logins('auth.login.failed'),
+                'step_up_failed' => $logins('auth.stepup.failed'),
+                'last_login_at' => is_string($lastLogin) ? Carbon::parse($lastLogin)->toIso8601String() : null,
+            ],
         ]);
     }
 

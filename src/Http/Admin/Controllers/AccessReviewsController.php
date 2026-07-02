@@ -84,10 +84,20 @@ final class AccessReviewsController extends AdminController
         $model = $this->findCampaign($request, $campaign);
 
         return $this->paginate(
-            ReviewItem::query()->where('campaign_id', $model->id),
+            // Eager-load the grant so each item can expose its subject + access (else N+1 / blank fields).
+            ReviewItem::query()->with('grant')->where('campaign_id', $model->id),
             $request,
             fn (Model $i): array => $i instanceof ReviewItem ? $this->itemSummary($i) : [],
         );
+    }
+
+    public function cancel(Request $request, string $campaign): JsonResponse
+    {
+        $model = $this->findCampaign($request, $campaign);
+        $this->runDomain(fn () => $this->engine->cancel($model));
+        $this->audit($request, 'iam.access_review.cancelled', 'review_campaign', $model->id);
+
+        return $this->ok(['campaign_id' => $model->id, 'status' => $model->fresh()?->status]);
     }
 
     public function certify(Request $request, string $item): JsonResponse
@@ -107,7 +117,7 @@ final class AccessReviewsController extends AdminController
         $this->runDomain(fn () => $this->engine->decide($model, $decision, $this->context($request)->actorRef(), is_string($note) ? $note : null));
         $this->audit($request, 'iam.access_review.item_decided', 'review_item', $model->id, ['decision' => $decision]);
 
-        return $this->ok($this->itemSummary($model->fresh() ?? $model));
+        return $this->ok($this->itemSummary(($model->fresh() ?? $model)->load('grant')));
     }
 
     private function findCampaign(Request $request, string $id): ReviewCampaign
@@ -150,10 +160,19 @@ final class AccessReviewsController extends AdminController
      */
     private function itemSummary(ReviewItem $i): array
     {
+        // The grant carries WHO (subject_type/subject_id) has WHAT access (privilege_key). Surface it so
+        // the console renders Subject/Access instead of blanks. Eager-loaded by items()/decide().
+        $grant = $i->grant;
+
         return [
             'id' => $i->id, 'campaign_id' => $i->campaign_id, 'grant_id' => $i->grant_id,
             'reviewer_subject' => $i->reviewer_subject, 'decision' => $i->decision,
             'signals' => $i->signals_json, 'decided_by' => $i->decided_by,
+            'subject_type' => $grant?->subject_type,
+            'subject_id' => $grant?->subject_id,
+            'privilege_type' => $grant?->privilege_type,
+            'privilege_key' => $grant?->privilege_key,
+            'application_key' => $grant?->application_key,
         ];
     }
 }

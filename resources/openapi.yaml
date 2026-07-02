@@ -324,10 +324,18 @@ paths:
       responses:
         "200": { description: OK }
         "409": { $ref: "#/components/responses/Problem" }
+  /access-reviews/campaigns/{campaign}/cancel:
+    post:
+      tags: [AccessReviews]
+      summary: Annulla una campagna (soft, senza applicare on_unconfirmed; storia preservata)
+      parameters: [{ name: campaign, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "409": { $ref: "#/components/responses/Problem" }
   /access-reviews/campaigns/{campaign}/items:
     get:
       tags: [AccessReviews]
-      summary: Item di una campagna
+      summary: Item di una campagna (ogni item espone subject_type/subject_id/privilege_key dal grant)
       parameters: [{ name: campaign, in: path, required: true, schema: { type: string } }]
       responses:
         "200": { description: OK }
@@ -868,6 +876,15 @@ paths:
     get:
       tags: [Metrics]
       summary: Aggregazioni audit (per tipo, integrità chain, outbox lag) bounded
+      parameters:
+        - { name: from, in: query, required: false, schema: { type: string, format: date-time } }
+        - { name: to, in: query, required: false, schema: { type: string, format: date-time } }
+      responses:
+        "200": { description: OK }
+  /metrics/users:
+    get:
+      tags: [Metrics]
+      summary: Inventory utenti (totale, per stato), sessioni attive e login (da audit stream) bounded
       parameters:
         - { name: from, in: query, required: false, schema: { type: string, format: date-time } }
         - { name: to, in: query, required: false, schema: { type: string, format: date-time } }

@@ -118,3 +118,52 @@ it('access-requests: reject senza creare grant', function () {
 
     expect(Grant::query()->where('source', 'access_request')->exists())->toBeFalse();
 });
+
+it('access-reviews: gli item espongono subject e access dal grant', function () {
+    grantAdmin('adm', ['iam:access_review.manage']);
+    subjectGrant('usr_g');
+    $h = ['X-Test-Auth' => 'adm', 'Idempotency-Key' => 'sa1'];
+    $campaignId = $this->postJson('/api/iam/v1/access-reviews/campaigns', ['name' => 'Q1', 'scope_json' => ['application_keys' => ['warehouse']]], $h)->json('data.id');
+    $this->postJson("/api/iam/v1/access-reviews/campaigns/{$campaignId}/open", [], ['X-Test-Auth' => 'adm', 'Idempotency-Key' => 'sa2']);
+
+    $this->getJson("/api/iam/v1/access-reviews/campaigns/{$campaignId}/items", ['X-Test-Auth' => 'adm'])
+        ->assertOk()
+        ->assertJsonPath('data.0.subject_type', 'user')
+        ->assertJsonPath('data.0.subject_id', 'usr_g')
+        ->assertJsonPath('data.0.privilege_key', 'warehouse:stock.read')
+        ->assertJsonPath('data.0.application_key', 'warehouse');
+});
+
+it('access-reviews: cancel annulla una campagna senza toccare i grant e blocca la riapertura (409)', function () {
+    grantAdmin('adm', ['iam:access_review.manage']);
+    $grant = subjectGrant('usr_g');
+    $h = ['X-Test-Auth' => 'adm', 'Idempotency-Key' => 'cx1'];
+    $campaignId = $this->postJson('/api/iam/v1/access-reviews/campaigns', ['name' => 'Q1', 'scope_json' => ['application_keys' => ['warehouse']]], $h)->json('data.id');
+    $this->postJson("/api/iam/v1/access-reviews/campaigns/{$campaignId}/open", [], ['X-Test-Auth' => 'adm', 'Idempotency-Key' => 'cx2']);
+
+    $this->postJson("/api/iam/v1/access-reviews/campaigns/{$campaignId}/cancel", [], ['X-Test-Auth' => 'adm', 'Idempotency-Key' => 'cx3'])
+        ->assertOk()->assertJsonPath('data.status', 'cancelled');
+
+    expect($grant->fresh()->revoked_at)->toBeNull();
+
+    $this->postJson("/api/iam/v1/access-reviews/campaigns/{$campaignId}/open", [], ['X-Test-Auth' => 'adm', 'Idempotency-Key' => 'cx4'])
+        ->assertStatus(409);
+});
+
+it('access-reviews: cancel di una draft mai aperta riesce; ri-cancel e cancel di una completed sono 409', function () {
+    grantAdmin('adm', ['iam:access_review.manage']);
+    $h = fn (string $k) => ['X-Test-Auth' => 'adm', 'Idempotency-Key' => $k];
+
+    // draft → cancel OK
+    $draft = $this->postJson('/api/iam/v1/access-reviews/campaigns', ['name' => 'D'], $h('d1'))->json('data.id');
+    $this->postJson("/api/iam/v1/access-reviews/campaigns/{$draft}/cancel", [], $h('d2'))
+        ->assertOk()->assertJsonPath('data.status', 'cancelled');
+    // ri-cancel di una cancelled → 409
+    $this->postJson("/api/iam/v1/access-reviews/campaigns/{$draft}/cancel", [], $h('d3'))->assertStatus(409);
+
+    // completed → cancel 409
+    $done = $this->postJson('/api/iam/v1/access-reviews/campaigns', ['name' => 'C', 'scope_json' => ['application_keys' => ['nope']]], $h('c1'))->json('data.id');
+    $this->postJson("/api/iam/v1/access-reviews/campaigns/{$done}/open", [], $h('c2'));
+    $this->postJson("/api/iam/v1/access-reviews/campaigns/{$done}/close", [], $h('c3'));
+    $this->postJson("/api/iam/v1/access-reviews/campaigns/{$done}/cancel", [], $h('c4'))->assertStatus(409);
+});

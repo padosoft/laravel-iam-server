@@ -54,6 +54,7 @@ Route::get('access-reviews/campaigns', [AccessReviewsController::class, 'index']
 Route::post('access-reviews/campaigns', [AccessReviewsController::class, 'store'])->middleware('iam.can:iam:access_review.manage');
 Route::post('access-reviews/campaigns/{campaign}/open', [AccessReviewsController::class, 'open'])->middleware('iam.can:iam:access_review.manage');
 Route::post('access-reviews/campaigns/{campaign}/close', [AccessReviewsController::class, 'close'])->middleware('iam.can:iam:access_review.manage');
+Route::post('access-reviews/campaigns/{campaign}/cancel', [AccessReviewsController::class, 'cancel'])->middleware('iam.can:iam:access_review.manage');
 Route::get('access-reviews/campaigns/{campaign}/items', [AccessReviewsController::class, 'items'])->middleware('iam.can:iam:access_review.manage');
 Route::post('access-reviews/items/{item}/certify', [AccessReviewsController::class, 'certify'])->middleware('iam.can:iam:access_review.manage');
 Route::post('access-reviews/items/{item}/revoke', [AccessReviewsController::class, 'revoke'])->middleware('iam.can:iam:access_review.manage');
@@ -115,6 +116,7 @@ Route::get('webhooks/{subscription}/deliveries', [WebhooksController::class, 'de
 Route::get('metrics/decisions', [MetricsController::class, 'decisions'])->middleware('iam.can:iam:metrics.read');
 Route::get('metrics/grants', [MetricsController::class, 'grants'])->middleware('iam.can:iam:metrics.read');
 Route::get('metrics/audit', [MetricsController::class, 'auditMetrics'])->middleware('iam.can:iam:metrics.read');
+Route::get('metrics/users', [MetricsController::class, 'users'])->middleware('iam.can:iam:metrics.read');
 
 // Least-privilege / anomaly recommendations (doc 16 §3, doc 14 §7)
 Route::get('recommendations/least-privilege', [RecommendationsController::class, 'leastPrivilege'])->middleware('iam.can:iam:least_privilege.view');

@@ -101,8 +101,13 @@ final class SessionsController extends AdminController
             'organization_id' => $s->organization_id,
             'aal' => $s->aal,
             'last_activity_at' => $s->last_activity_at->toIso8601String(),
+            // console-friendly alias for the grid's "last active" column (privacy: IP/UA are hashed only).
+            'last_active_at' => $s->last_activity_at->toIso8601String(),
+            'step_up_at' => $s->step_up_at?->toIso8601String(),
+            'created_at' => $s->created_at?->toIso8601String(),
             'absolute_expires_at' => $s->absolute_expires_at->toIso8601String(),
             'revoked_at' => $s->revoked_at?->toIso8601String(),
+            'revoked_reason' => $s->revoked_reason,
         ];
     }
 }

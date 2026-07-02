@@ -10,6 +10,10 @@ use Padosoft\Iam\Contracts\Support\SubjectRef;
 use Padosoft\Iam\Domain\Audit\Models\AuditEvent;
 use Padosoft\Iam\Domain\Audit\Pii\AuditRecorder;
 use Padosoft\Iam\Domain\Authorization\Models\Grant;
+use Padosoft\Iam\Domain\Identity\Models\Session;
+use Padosoft\Iam\Domain\Identity\Models\User;
+use Padosoft\Iam\Domain\Organizations\Models\Membership;
+use Padosoft\Iam\Domain\Organizations\Models\Organization;
 use Padosoft\Iam\Http\Admin\Support\AdminActorResolver;
 use Padosoft\Iam\Http\Admin\Support\AdminContext;
 
@@ -110,6 +114,55 @@ it('metrics/audit espone by_event_type e outbox lag', function () {
     $res->assertOk();
     expect($res->json('data.outbox_lag'))->toBe(1)
         ->and($res->json('data.by_event_type'))->toHaveKey('iam.thing.created');
+});
+
+it('metrics/users conta inventory per-status, sessioni attive e login dallo stream audit', function () {
+    metBind();
+    metGrant('adm', ['iam:metrics.read']);
+
+    (new User)->forceFill(['id' => 'u_a', 'email' => 'a@x.it', 'status' => 'active'])->save();
+    (new User)->forceFill(['id' => 'u_s', 'email' => 's@x.it', 'status' => 'suspended'])->save();
+    // Sessione attiva (non revocata, non scaduta) per u_a.
+    (new Session)->forceFill([
+        'user_id' => 'u_a', 'aal' => 'aal1', 'idle_timeout' => 900,
+        'last_activity_at' => now(), 'absolute_expires_at' => now()->addHour(),
+    ])->save();
+
+    metSeedEvent('auth.login.succeeded');
+    metSeedEvent('auth.login.succeeded');
+    metSeedEvent('auth.login.failed');
+    metSeedEvent('auth.stepup.failed');
+
+    $res = $this->getJson('/api/iam/v1/metrics/users', ['X-Test-Auth' => 'adm']);
+
+    $res->assertOk()
+        ->assertJsonPath('data.total', 2)
+        ->assertJsonPath('data.by_status.active', 1)
+        ->assertJsonPath('data.by_status.suspended', 1)
+        ->assertJsonPath('data.users_with_active_sessions', 1)
+        ->assertJsonPath('data.logins.succeeded', 2)
+        ->assertJsonPath('data.logins.failed', 1)
+        ->assertJsonPath('data.logins.step_up_failed', 1);
+    expect($res->json('data.logins.last_login_at'))->not->toBeNull();
+});
+
+it('metrics/users è tenant-scoped: conta solo i membri dell\'org dell\'admin', function () {
+    metBind('org_a');
+    metGrant('adm', ['iam:metrics.read']);
+    (new Organization)->forceFill(['id' => 'org_a', 'key' => 'org_a', 'name' => 'Org A'])->save();
+    (new User)->forceFill(['id' => 'u_member', 'email' => 'm@x.it', 'status' => 'active'])->save();
+    (new User)->forceFill(['id' => 'u_other', 'email' => 'o@x.it', 'status' => 'active'])->save();
+    (new Membership)->forceFill(['organization_id' => 'org_a', 'user_id' => 'u_member', 'status' => 'active'])->save();
+
+    $this->getJson('/api/iam/v1/metrics/users', ['X-Test-Auth' => 'adm'])
+        ->assertOk()
+        ->assertJsonPath('data.total', 1)             // solo il membro, non u_other
+        ->assertJsonPath('data.by_status.active', 1);
+});
+
+it('metrics/users senza permesso è 403 fail-closed', function () {
+    metBind();
+    $this->getJson('/api/iam/v1/metrics/users', ['X-Test-Auth' => 'adm'])->assertStatus(403);
 });
 
 it('metrics/decisions è tenant-scoped: un admin di org_a non vede gli eventi di org_b', function () {
