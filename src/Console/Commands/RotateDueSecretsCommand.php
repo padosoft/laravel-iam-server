@@ -27,8 +27,10 @@ final class RotateDueSecretsCommand extends Command
 
         $rotated = 0;
         $cleared = 0;
+        // NB: niente filtro su is_confidential qui — così un pending orfano (es. client commutato a public)
+        // viene comunque azzerato quando il suo grace scade. La rotazione resta gated da dueForRotation().
         OauthClient::query()
-            ->where('is_confidential', true)->whereNull('revoked_at')
+            ->whereNull('revoked_at')
             ->where(fn ($q) => $q->where('auto_rotate', true)->orWhereNotNull('secret_pending_encrypted'))
             ->chunkById(200, function (Collection $clients) use ($grace, $ttl, &$rotated, &$cleared): void {
                 foreach ($clients as $client) {

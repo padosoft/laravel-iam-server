@@ -8,6 +8,9 @@ use Padosoft\Iam\Domain\OAuth\Repositories\ClientRepository;
 
 uses(RefreshDatabase::class);
 
+// Il self-fetch è opt-in (default off); lo abilitiamo per i test (il test "disabilitato" lo rimette a false).
+beforeEach(fn () => config(['iam.oauth.client_selffetch' => true]));
+
 function confidentialClient(string $id, string $secret, array $overrides = []): OauthClient
 {
     $c = OauthClient::register(['client_id' => $id, 'name' => $id, 'is_confidential' => true, 'grants' => ['client_credentials']], $secret);
@@ -51,6 +54,12 @@ it('self-fetch: il client ritira il nuovo secret autenticandosi con quello ancor
 
     // Il nuovo secret autentica (ed è quello che l'app userà dopo lo swap).
     expect((new ClientRepository)->validateClient('cli_sf', $new, null))->toBeTrue();
+
+    // Pickup ONE-TIME: un secondo ritiro non riespone il secret (finestra ridotta a un solo fetch).
+    $second = $this->postJson('/oauth/client-secret', [], ['Authorization' => 'Basic '.base64_encode('cli_sf:CURRENT')])
+        ->assertOk()->assertJsonPath('rotated', false);
+    // RFC 6749 §5.1: no-store presente (il framework può aggiungere altre direttive es. "private").
+    expect($second->headers->get('Cache-Control'))->toContain('no-store');
 });
 
 it('self-fetch: senza pending ritorna rotated=false; credenziali errate 401', function () {

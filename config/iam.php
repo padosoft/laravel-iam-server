@@ -53,8 +53,9 @@ return [
         'client_secret_grace' => (int) env('IAM_OAUTH_CLIENT_SECRET_GRACE', 259200), // 72h
         'client_secret_warn_days' => (int) env('IAM_OAUTH_CLIENT_SECRET_WARN_DAYS', 14),
         // Auto-rotation self-fetch (doc 13 §4.2): abilita POST /oauth/client-secret, con cui un client in
-        // auto-rotazione ritira il nuovo secret durante il grace autenticandosi col proprio. Off → 404.
-        'client_selffetch' => env('IAM_OAUTH_CLIENT_SELFFETCH', true),
+        // auto-rotazione ritira il nuovo secret durante il grace autenticandosi col proprio. OPT-IN
+        // (secure-by-default): off → 404; accendilo solo dove usi l'auto-rotazione. Il pickup è one-time.
+        'client_selffetch' => env('IAM_OAUTH_CLIENT_SELFFETCH', false),
         'require_pkce' => true,         // PKCE S256 obbligatorio per i client public (doc 13 §9)
         'grants' => [
             'client_credentials' => true,

@@ -33,18 +33,32 @@ final class ClientSecretController
         }
 
         $client = OauthClient::query()->where('client_id', $clientId)->whereNull('revoked_at')->first();
-        $pending = $client?->pendingSecret();
+        // Fail-closed: solo un client confidential può avere/ritirare un pending (defense-in-depth se un
+        // client viene commutato a public con un pending residuo).
+        $pending = $client !== null && $client->is_confidential ? $client->pendingSecret() : null;
         if ($client === null || $pending === null) {
-            // Niente da ritirare (nessuna rotazione pendente).
-            return response()->json(['rotated' => false]);
+            return $this->noStore(response()->json(['rotated' => false]));
         }
 
-        return response()->json([
+        $graceUntil = $client->secret_previous_expires_at?->toIso8601String();
+        // Pickup ONE-TIME: azzeriamo subito il pending, così un vecchio secret trafugato non può "portarsi
+        // avanti" prendendo il nuovo per tutta la finestra di grace — l'esposizione crolla a "prima che
+        // l'app legittima l'abbia ritirato". Il vecchio resta valido per il resto del grace, quindi un
+        // fetch-then-crash significa solo attendere la prossima rotazione (nessun downtime immediato).
+        $client->clearPendingSecret();
+
+        return $this->noStore(response()->json([
             'rotated' => true,
             'client_id' => $clientId,
             'client_secret' => $pending,
-            'grace_until' => $client->secret_previous_expires_at?->toIso8601String(),
-        ]);
+            'grace_until' => $graceUntil,
+        ]));
+    }
+
+    /** RFC 6749 §5.1: nessuna cache su una risposta che porta credenziali. */
+    private function noStore(JsonResponse $response): JsonResponse
+    {
+        return $response->header('Cache-Control', 'no-store')->header('Pragma', 'no-cache');
     }
 
     /**

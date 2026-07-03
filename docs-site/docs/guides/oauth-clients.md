@@ -130,8 +130,14 @@ curl -X POST https://iam.example.com/oauth/client-secret \
 
 Only the legitimate client — the one holding a valid secret — can retrieve the rotated one (`validateClient`
 is the gate; there is no user/PDP auth here, it's client authentication). `laravel-iam-client` does this
-fetch-and-swap automatically. Disable the endpoint with `IAM_OAUTH_CLIENT_SELFFETCH=false`. For a shared
-secret you never want to rotate at all, use asymmetric `private_key_jwt` instead (roadmap).
+fetch-and-swap automatically. The pickup is **one-time**: the new secret is returned once and then cleared,
+so a leaked old secret can't roll forward for the whole grace. The response carries `Cache-Control: no-store`.
+
+The endpoint is **opt-in** — enable it with `IAM_OAUTH_CLIENT_SELFFETCH=true` on deployments that use
+auto-rotation (off by default → 404). Auto-rotation is a **hygiene** control (bounded secret lifetime), not
+incident response: on a **suspected leak, revoke the client** (revocation kills the self-fetch too) rather
+than relying on rotation. For a shared secret you never want to rotate at all, use asymmetric
+`private_key_jwt` instead (roadmap).
 
 ## Token signing & JWKS
 
