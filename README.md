@@ -56,6 +56,9 @@ ask the PDP. You get one place to see and prove every access decision.
   it is **validated, diffed, approved, applied and rollback-able**. The core hardcodes nothing.
 - **Full OAuth2 + OIDC IdP** — authorization-code/PKCE, client-credentials, refresh (encrypted), JWKS, an OIDC
   layer on an **MIT** base (never AGPL). Bring your own login backend (Fortify, Socialite, passkeys).
+- **Application credential lifecycle** — IAM issues the `client_secret` at manifest apply (one-time, hashed),
+  with **zero-downtime rotation** (grace window), **scheduled expiry + alerts**, opt-in **auto-rotation** with
+  app **self-fetch**, and revocation. Full guide: [Application credentials & lifecycle](https://doc.laravel-iam-server.padosoft.com/guides/application-credentials).
 - **Tamper-evident audit** — hash-chained events (`AuditChainAppender` / `AuditChainVerifier`), SIEM export,
   webhooks/outbox, and GDPR crypto-shredding / legal-hold for PII.
 - **Identity governance (IGA)** — access-review campaigns, access-request approval flows, least-privilege
