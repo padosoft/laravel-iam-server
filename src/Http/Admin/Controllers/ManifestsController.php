@@ -91,9 +91,17 @@ final class ManifestsController extends AdminController
     {
         $model = $this->find($request, $manifest);
         $app = $this->runDomain(fn () => $this->registry->apply($model));
+        // One-time client_secret: only present when apply() minted a NEW secret (a confidential client
+        // without a pre-existing one). Shown ONCE to the operator to configure the app; never persisted in
+        // clear, never re-shown, and deliberately NOT written to the audit metadata below.
+        $secret = $this->registry->lastGeneratedSecret();
         $this->audit($request, 'iam.manifest.applied', 'manifest', $model->id, ['application_id' => $app->id]);
 
-        return $this->ok($this->summary($model->fresh() ?? $model) + ['application_id' => $app->id]);
+        return $this->ok($this->summary($model->fresh() ?? $model) + [
+            'application_id' => $app->id,
+            'client_id' => 'cli_'.$app->key,
+            'client_secret' => $secret,
+        ]);
     }
 
     public function rollback(Request $request, string $manifest): JsonResponse

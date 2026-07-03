@@ -84,7 +84,27 @@ stateDiagram-v2
    curl -X POST https://iam.example.com/api/iam/v1/manifests/{id}/apply \
      -H "Authorization: Bearer $ADMIN_TOKEN" -H "Idempotency-Key: $(uuidgen)"
    ```
-   `ManifestApplier` writes the new catalog state atomically and records an audit entry.
+   `ManifestApplier` writes the new catalog state atomically and records an audit entry. The **response**
+   carries the app's OAuth identity — and, for a **newly-created confidential client**, the one-time secret:
+   ```json
+   {
+     "data": {
+       "application_id": "app_…",
+       "client_id": "cli_warehouse",
+       "client_secret": "GENERATED-48-CHAR-SECRET-SHOWN-ONCE"
+     }
+   }
+   ```
+   :::danger Capture `client_secret` now — it is shown only once
+   The secret is generated **only on this apply** (a brand-new confidential client), stored **hashed**, and
+   **never returned again** (nor written to the audit log). Copy it straight into the consuming app's OIDC
+   configuration. On a **re-apply** of an app that already has a secret, `client_secret` is `null` — the
+   existing secret is kept, apply never silently rotates it. If a secret is lost or leaked, see rotation in
+   [OAuth clients](/guides/oauth-clients). The CLI prints the same value once (`iam:manifest:apply` →
+   "Client secret (mostrato UNA sola volta…)").
+   :::
+   The app then presents `client_id` + `client_secret` at `/oauth/token` (`client_secret_basic` or
+   `client_secret_post`), or uses PKCE if it is a **public** client (no secret).
 
 5. **Rollback** if needed
    ```bash
