@@ -3,12 +3,32 @@
 declare(strict_types=1);
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
+use Padosoft\Iam\Contracts\Support\SubjectRef;
 use Padosoft\Iam\Domain\Organizations\Models\Organization;
+use Padosoft\Iam\Http\Admin\Support\AdminActorResolver;
+use Padosoft\Iam\Http\Admin\Support\AdminContext;
 
 uses(RefreshDatabase::class);
 
 // bindTestResolver()/grantAdmin() are global helpers (AdminUsersApiTest.php).
 beforeEach(fn () => bindTestResolver());
+
+// Bind an actor resolver constrained to a specific tenant org (mirrors AdminUsersApiTest).
+function bindTenantResolver(string $orgId): void
+{
+    app()->bind(AdminActorResolver::class, fn () => new class($orgId) implements AdminActorResolver
+    {
+        public function __construct(private readonly string $orgId) {}
+
+        public function resolve(Request $request): ?AdminContext
+        {
+            $id = $request->headers->get('X-Test-Auth');
+
+            return is_string($id) && $id !== '' ? new AdminContext(new SubjectRef('user', $id), $this->orgId) : null;
+        }
+    });
+}
 
 it('organizations: crea, elenca, mostra, aggiorna e sospende', function () {
     grantAdmin('adm', ['iam:organizations.read', 'iam:organizations.manage']);
@@ -60,4 +80,30 @@ it('groups: organization_id inesistente è 422', function () {
     grantAdmin('adm', ['iam:groups.manage']);
     $this->postJson('/api/iam/v1/groups', ['key' => 'eng', 'name' => 'Engineering', 'organization_id' => 'nope'], ['X-Test-Auth' => 'adm', 'Idempotency-Key' => 'g3'])
         ->assertStatus(422);
+});
+
+it('organizations: un admin vincolato a un tenant vede solo la sua org e 404 sulle altre', function () {
+    $mine = Organization::query()->create(['key' => 'mine', 'name' => 'Mine']);
+    Organization::query()->create(['key' => 'other', 'name' => 'Other']);
+    bindTenantResolver($mine->id);
+    grantAdmin('adm', ['iam:organizations.read', 'iam:organizations.manage']);
+
+    $list = $this->getJson('/api/iam/v1/organizations', ['X-Test-Auth' => 'adm'])->assertOk();
+    expect($list->json('data'))->toHaveCount(1)->and($list->json('data.0.key'))->toBe('mine');
+
+    // Cross-tenant read/mutate → 404 (no enumeration, no cross-tenant suspend).
+    $this->getJson('/api/iam/v1/organizations/other', ['X-Test-Auth' => 'adm'])->assertStatus(404);
+    $this->patchJson('/api/iam/v1/organizations/other', ['name' => 'X'], ['X-Test-Auth' => 'adm', 'Idempotency-Key' => 'i1'])->assertStatus(404);
+    $this->deleteJson('/api/iam/v1/organizations/other', [], ['X-Test-Auth' => 'adm', 'Idempotency-Key' => 'i2'])->assertStatus(404);
+});
+
+it('groups: un tenant admin ignora un organization_id nel body (crea nella SUA org)', function () {
+    $mine = Organization::query()->create(['key' => 'mine', 'name' => 'Mine']);
+    Organization::query()->create(['key' => 'other', 'name' => 'Other']);
+    bindTenantResolver($mine->id);
+    grantAdmin('adm', ['iam:groups.manage']);
+
+    $res = $this->postJson('/api/iam/v1/groups', ['key' => 'eng', 'name' => 'Eng', 'organization_id' => 'other'], ['X-Test-Auth' => 'adm', 'Idempotency-Key' => 'g9']);
+
+    $res->assertStatus(201)->assertJsonPath('data.organization_id', $mine->id); // context org, NOT the body 'other'
 });

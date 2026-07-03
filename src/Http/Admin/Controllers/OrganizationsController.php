@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Padosoft\Iam\Http\Admin\Controllers;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
@@ -16,12 +17,21 @@ use Padosoft\Iam\Http\Admin\Support\ApiProblemException;
  * Admin API — Organizations / tenants (doc 09/10). First-class multi-tenancy: an org scopes groups,
  * memberships and grants. CRUD only; a "delete" suspends (status=suspended) rather than hard-deleting,
  * so existing grants/memberships/audit are never orphaned. Every mutation is audited.
+ *
+ * Tenant-scoped like the rest of the Admin API: a global admin (no org in context, e.g. the console
+ * super-admin) sees/manages all tenants; a tenant-scoped actor is confined to its own org (cross-tenant
+ * reads/mutations 404). NB: `suspended` is an administrative flag only — it does NOT stop the org's
+ * grants from authorizing at the PDP (which filters on grant activity, not org status). Deactivating a
+ * tenant's access is a separate concern.
  */
 final class OrganizationsController extends AdminController
 {
     public function index(Request $request): JsonResponse
     {
-        return $this->paginate(Organization::query(), $request, fn (Model $o): array => $o instanceof Organization ? $this->summary($o) : []);
+        $org = $this->context($request)->organizationId;
+        $query = Organization::query()->when($org !== null, fn (Builder $q): Builder => $q->where('id', $org));
+
+        return $this->paginate($query, $request, fn (Model $o): array => $o instanceof Organization ? $this->summary($o) : []);
     }
 
     public function store(Request $request): JsonResponse
@@ -43,12 +53,12 @@ final class OrganizationsController extends AdminController
 
     public function show(Request $request, string $organization): JsonResponse
     {
-        return $this->ok($this->summary($this->find($organization)));
+        return $this->ok($this->summary($this->find($request, $organization)));
     }
 
     public function update(Request $request, string $organization): JsonResponse
     {
-        $model = $this->find($organization);
+        $model = $this->find($request, $organization);
         $before = $this->summary($model);
 
         $name = $request->input('name');
@@ -68,7 +78,7 @@ final class OrganizationsController extends AdminController
 
     public function destroy(Request $request, string $organization): JsonResponse
     {
-        $model = $this->find($organization);
+        $model = $this->find($request, $organization);
         if ($model->status === 'suspended') {
             throw ApiProblemException::conflict('Organizzazione già sospesa.');
         }
@@ -80,12 +90,14 @@ final class OrganizationsController extends AdminController
         return $this->ok(['id' => $model->id, 'status' => 'suspended']);
     }
 
-    private function find(string $organization): Organization
+    private function find(Request $request, string $organization): Organization
     {
         // Lookup by key first (the human handle), then by id.
         $model = Organization::query()->where('key', $organization)->first()
             ?? Organization::query()->find($organization);
-        if ($model === null) {
+        // Tenant isolation: a scoped actor can only touch its own org (cross-tenant → 404, no leak).
+        $org = $this->context($request)->organizationId;
+        if ($model === null || ($org !== null && $model->id !== $org)) {
             throw ApiProblemException::notFound("Organizzazione \"{$organization}\" non trovata.");
         }
 
