@@ -56,6 +56,19 @@ it('organizations: key duplicata è 409', function () {
         ->assertStatus(409);
 });
 
+it('organizations: rinomina la key (safe internamente) e 409 su key già esistente', function () {
+    grantAdmin('adm', ['iam:organizations.manage', 'iam:organizations.read']);
+    $org = Organization::query()->create(['key' => 'old', 'name' => 'Org']);
+    Organization::query()->create(['key' => 'taken', 'name' => 'Other']);
+
+    $this->patchJson('/api/iam/v1/organizations/old', ['key' => 'new'], ['X-Test-Auth' => 'adm', 'Idempotency-Key' => 'k1'])
+        ->assertOk()->assertJsonPath('data.key', 'new');
+    expect(Organization::query()->find($org->id)?->key)->toBe('new');
+
+    $this->patchJson('/api/iam/v1/organizations/new', ['key' => 'taken'], ['X-Test-Auth' => 'adm', 'Idempotency-Key' => 'k2'])
+        ->assertStatus(409);
+});
+
 it('organizations: senza permesso è 403', function () {
     grantAdmin('adm', ['iam:groups.read']);
     $this->getJson('/api/iam/v1/organizations', ['X-Test-Auth' => 'adm'])->assertStatus(403);

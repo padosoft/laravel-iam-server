@@ -26,10 +26,11 @@ final class EventsQuery
         }
 
         if ($typePrefix !== null && $typePrefix !== '') {
-            // Escape dei metacaratteri LIKE + clausola ESCAPE esplicita: SQLite non ha un escape
-            // char di default per LIKE, quindi senza ESCAPE un prefisso con %/_ filtrerebbe male.
-            $escaped = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $typePrefix);
-            $builder->whereRaw("event_type LIKE ? ESCAPE '\\'", [$escaped.'%']);
+            // Escape the LIKE metacharacters (%, _) and the escape char itself. The escape char is '!',
+            // NOT backslash: on MySQL a backslash inside a string literal is itself an escape, so
+            // ESCAPE '\' is a syntax error (it works on SQLite but 500s on MySQL). '!' is literal on both.
+            $escaped = str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $typePrefix);
+            $builder->whereRaw("event_type LIKE ? ESCAPE '!'", [$escaped.'%']);
         }
 
         // Prendiamo un elemento in più per sapere se esiste una pagina successiva.
