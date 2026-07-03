@@ -7,6 +7,7 @@ namespace Padosoft\Iam\Domain\OAuth\Models;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 
@@ -30,6 +31,9 @@ use Illuminate\Support\Str;
  * @property string|null $organization_id
  * @property string|null $application_key
  * @property Carbon|null $revoked_at
+ * @property bool $auto_rotate
+ * @property int|null $rotate_interval_days
+ * @property string|null $secret_pending_encrypted
  */
 final class OauthClient extends Model
 {
@@ -41,6 +45,7 @@ final class OauthClient extends Model
     protected $fillable = [
         'client_id', 'name', 'redirect_uris', 'grants', 'scopes',
         'is_confidential', 'is_first_party', 'organization_id', 'application_key',
+        'auto_rotate', 'rotate_interval_days',
     ];
 
     /** @var array<string, mixed> Secure-by-default: third-party (consenso esplicito) salvo marcatura. */
@@ -59,10 +64,11 @@ final class OauthClient extends Model
         'secret_expires_at' => 'datetime',
         'secret_previous_expires_at' => 'datetime',
         'secret_rotated_at' => 'datetime',
+        'auto_rotate' => 'boolean',
     ];
 
-    /** @var list<string> Gli hash dei secret (corrente + precedente) non vanno mai serializzati. */
-    protected $hidden = ['secret', 'secret_previous'];
+    /** @var list<string> Hash dei secret + il pending cifrato non vanno mai serializzati. */
+    protected $hidden = ['secret', 'secret_previous', 'secret_pending_encrypted'];
 
     /**
      * Registra un client; il secret (se confidential) è passato in chiaro e custodito come hash.
@@ -94,7 +100,7 @@ final class OauthClient extends Model
      * Ritorna il nuovo secret IN CHIARO — da consegnare/mostrare UNA sola volta (non è mai persistito
      * in chiaro). Solo per client confidential.
      */
-    public function rotateSecret(int $graceSeconds, ?int $ttlSeconds): string
+    public function rotateSecret(int $graceSeconds, ?int $ttlSeconds, bool $storeForPickup = false): string
     {
         $now = now();
         if (is_string($this->secret) && $this->secret !== '') {
@@ -105,6 +111,9 @@ final class OauthClient extends Model
         $this->secret = Hash::make($plain);
         $this->secret_expires_at = $ttlSeconds !== null ? $now->copy()->addSeconds($ttlSeconds) : null;
         $this->secret_rotated_at = $now;
+        // Auto-rotation: nessun umano riceve il secret → lo teniamo CIFRATO (recuperabile, app-key) per il
+        // self-fetch dell'app durante il grace. Rotazione manuale: l'admin lo riceve → nessun pending.
+        $this->secret_pending_encrypted = $storeForPickup ? Crypt::encryptString($plain) : null;
         $this->save();
 
         return $plain;
@@ -115,5 +124,40 @@ final class OauthClient extends Model
     {
         return is_string($this->secret_previous) && $this->secret_previous !== ''
             && $this->secret_previous_expires_at !== null && $this->secret_previous_expires_at->isFuture();
+    }
+
+    /** true se il client va auto-ruotato ORA (opt-in, intervallo scaduto, nessuna rotazione già in corso). */
+    public function dueForRotation(): bool
+    {
+        if (!$this->auto_rotate || !$this->is_confidential || $this->revoked_at !== null || $this->previousSecretActive()) {
+            return false;
+        }
+        $days = $this->rotate_interval_days;
+        if ($days === null || $days <= 0) {
+            return false;
+        }
+
+        return $this->secret_rotated_at === null || $this->secret_rotated_at->copy()->addDays($days)->isPast();
+    }
+
+    /** Il secret pending (nuovo) in chiaro, per il self-fetch dell'app durante il grace; null se assente. */
+    public function pendingSecret(): ?string
+    {
+        if (!is_string($this->secret_pending_encrypted) || $this->secret_pending_encrypted === '') {
+            return null;
+        }
+        try {
+            return Crypt::decryptString($this->secret_pending_encrypted);
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    public function clearPendingSecret(): void
+    {
+        if ($this->secret_pending_encrypted !== null) {
+            $this->secret_pending_encrypted = null;
+            $this->save();
+        }
     }
 }

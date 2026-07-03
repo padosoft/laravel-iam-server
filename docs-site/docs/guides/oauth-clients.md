@@ -110,8 +110,34 @@ curl -X POST https://iam.example.com/api/iam/v1/applications/warehouse/revoke-cl
 ```
 
 Rotation/revoke require `iam:clients.manage`; reading credential status requires `iam:applications.read`.
-Automatic rotation (scheduler-driven, with app self-fetch during grace) is documented under
-[Application credentials](/guides/application-credentials).
+
+### Automatic rotation (no admin, no downtime)
+
+Opt a client into `auto_rotate` (with a `rotate_interval_days`) and the scheduler rotates it for you — no
+manual step, no one tracking expiries. Because no human receives the new secret, the server keeps it
+**encrypted at rest** so the app can **self-fetch** it during the grace window:
+
+1. Schedule the command (host): `$schedule->command('iam:rotate-due-secrets')->daily();` — it rotates due
+   clients and clears pending ciphertexts whose grace has lapsed.
+2. On rotation, the new secret is stored encrypted; the previous secret stays valid for the grace.
+3. The app fetches the new secret with its **still-valid current secret** and hot-swaps:
+
+```bash
+curl -X POST https://iam.example.com/oauth/client-secret \
+  -u "cli_warehouse:$CURRENT_SECRET"
+# → { "rotated": true, "client_secret": "NEW-SECRET", "grace_until": "…" }   (or { "rotated": false })
+```
+
+Only the legitimate client — the one holding a valid secret — can retrieve the rotated one (`validateClient`
+is the gate; there is no user/PDP auth here, it's client authentication). `laravel-iam-client` does this
+fetch-and-swap automatically. The pickup is **one-time**: the new secret is returned once and then cleared,
+so a leaked old secret can't roll forward for the whole grace. The response carries `Cache-Control: no-store`.
+
+The endpoint is **opt-in** — enable it with `IAM_OAUTH_CLIENT_SELFFETCH=true` on deployments that use
+auto-rotation (off by default → 404). Auto-rotation is a **hygiene** control (bounded secret lifetime), not
+incident response: on a **suspected leak, revoke the client** (revocation kills the self-fetch too) rather
+than relying on rotation. For a shared secret you never want to rotate at all, use asymmetric
+`private_key_jwt` instead (roadmap).
 
 ## Token signing & JWKS
 

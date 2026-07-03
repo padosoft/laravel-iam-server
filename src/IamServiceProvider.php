@@ -16,6 +16,7 @@ use Padosoft\Iam\Console\Commands\ManifestValidateCommand;
 use Padosoft\Iam\Console\Commands\ReviewsCloseCommand;
 use Padosoft\Iam\Console\Commands\ReviewsOpenCommand;
 use Padosoft\Iam\Console\Commands\ReviewsRemindCommand;
+use Padosoft\Iam\Console\Commands\RotateDueSecretsCommand;
 use Padosoft\Iam\Contracts\Assurance\AssuranceProvider;
 use Padosoft\Iam\Contracts\Assurance\FactorVerifier;
 use Padosoft\Iam\Contracts\Assurance\StepUpProvider;
@@ -87,6 +88,7 @@ final class IamServiceProvider extends PackageServiceProvider
                 ReviewsCloseCommand::class,
                 ReviewsRemindCommand::class,
                 LeastPrivilegeScanCommand::class,
+                RotateDueSecretsCommand::class,
             ]);
     }
 
