@@ -94,6 +94,18 @@ it('metrics/clients: conta i secret in scadenza/scaduti e li elenca (per banner/
         ->and($res->json('data.items'))->toHaveCount(2);
 });
 
+it('client: il manifest abilita auto_rotate + intervallo (registry-owned)', function () {
+    $manifest = validManifest();
+    $manifest['auth']['auto_rotate'] = true;
+    $manifest['auth']['rotate_interval_days'] = 30;
+    submitApproveApply($manifest);
+    grantAdmin('adm', ['iam:applications.read']);
+
+    $res = $this->getJson('/api/iam/v1/applications/warehouse/client', ['X-Test-Auth' => 'adm'])->assertOk();
+    expect($res->json('data.auto_rotate'))->toBeTrue()
+        ->and($res->json('data.rotate_interval_days'))->toBe(30);
+});
+
 it('client: rotate/revoke senza iam:clients.manage è 403', function () {
     submitApproveApply(validManifest());
     grantAdmin('adm', ['iam:applications.read']); // niente clients.manage

@@ -128,6 +128,8 @@ final class ApplicationsController extends AdminController
         return [
             'client_id' => $c->client_id,
             'is_confidential' => $c->is_confidential,
+            'auto_rotate' => $c->auto_rotate,
+            'rotate_interval_days' => $c->rotate_interval_days,
             'secret_expires_at' => $c->secret_expires_at?->toIso8601String(),
             'secret_rotated_at' => $c->secret_rotated_at?->toIso8601String(),
             'grace_active' => $c->previousSecretActive(),

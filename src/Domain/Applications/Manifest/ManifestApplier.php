@@ -87,6 +87,10 @@ final class ManifestApplier
             'is_first_party' => true, // le app del registry sono first-party
             'organization_id' => $organizationId,
             'application_key' => $appKey,
+            // Auto-rotazione opzionale dichiarata nel manifest (doc 13 §4.2): il registry possiede il client,
+            // quindi l'opzione vive nel manifest, non in un edit diretto.
+            'auto_rotate' => ($auth['auto_rotate'] ?? false) === true,
+            'rotate_interval_days' => is_numeric($auth['rotate_interval_days'] ?? null) ? (int) $auth['rotate_interval_days'] : null,
         ]);
 
         // Un client confidential ha bisogno di un secret (senza, fail-closed = inutilizzabile). Lo
