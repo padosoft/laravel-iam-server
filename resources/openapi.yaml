@@ -136,10 +136,26 @@ paths:
       responses:
         "200": { description: OK }
         "404": { $ref: "#/components/responses/Problem" }
+    patch:
+      tags: [Users]
+      summary: Aggiorna name/email di un utente
+      parameters: [{ name: user, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "404": { $ref: "#/components/responses/Problem" }
+        "422": { $ref: "#/components/responses/Problem" }
   /users/{user}/effective-permissions:
     get:
       tags: [Users]
       summary: Permessi effettivi di un utente
+      parameters: [{ name: user, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "404": { $ref: "#/components/responses/Problem" }
+  /users/{user}/grants:
+    get:
+      tags: [Users]
+      summary: Grant attivi assegnati direttamente all'utente (per l'edit/revoca)
       parameters: [{ name: user, in: path, required: true, schema: { type: string } }]
       responses:
         "200": { description: OK }
@@ -778,6 +794,16 @@ paths:
       responses:
         "201": { description: Grant creato }
         "200": { description: Grant già esistente (idempotente) }
+  /grants/{grant}/revoke:
+    post:
+      tags: [PolicyWizard]
+      summary: Revoca un grant (rimuove un ruolo/permesso da un soggetto, idempotente)
+      parameters:
+        - { name: grant, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      responses:
+        "200": { description: OK }
+        "404": { $ref: "#/components/responses/Problem" }
   /webhooks:
     get:
       tags: [Webhooks]

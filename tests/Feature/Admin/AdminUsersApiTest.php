@@ -145,3 +145,105 @@ it('espone i permessi effettivi espandendo i ruoli', function () {
     $res->assertOk();
     expect($res->json('data.permissions'))->toHaveKey('warehouse:stock.read');
 });
+
+it('aggiorna name/email di un utente e audita', function () {
+    grantAdmin('adm', ['iam:users.manage']);
+    $u = User::create(['email' => 'a@x.it', 'name' => 'Old']);
+
+    $this->patchJson("/api/iam/v1/users/{$u->id}", ['name' => 'New', 'email' => 'new@x.it'], ['X-Test-Auth' => 'adm', 'Idempotency-Key' => 'up1'])
+        ->assertOk()->assertJsonPath('data.name', 'New')->assertJsonPath('data.email', 'new@x.it');
+
+    expect($u->fresh()->email)->toBe('new@x.it')
+        ->and(AuditEvent::query()->where('event_type', 'iam.user.updated')->where('target_id', $u->id)->count())->toBe(1);
+});
+
+it('update rifiuta email duplicata (422) e payload vuoto (422)', function () {
+    grantAdmin('adm', ['iam:users.manage']);
+    User::create(['email' => 'taken@x.it']);
+    $u = User::create(['email' => 'a@x.it']);
+
+    $this->patchJson("/api/iam/v1/users/{$u->id}", ['email' => 'taken@x.it'], ['X-Test-Auth' => 'adm', 'Idempotency-Key' => 'up2'])
+        ->assertStatus(422);
+    $this->patchJson("/api/iam/v1/users/{$u->id}", [], ['X-Test-Auth' => 'adm', 'Idempotency-Key' => 'up3'])
+        ->assertStatus(422);
+});
+
+it('cerca utenti per q su name/email', function () {
+    grantAdmin('adm', ['iam:users.read']);
+    User::create(['email' => 'alice@x.it', 'name' => 'Alice']);
+    User::create(['email' => 'bob@x.it', 'name' => 'Bob']);
+
+    $res = $this->getJson('/api/iam/v1/users?q=alic', ['X-Test-Auth' => 'adm']);
+
+    $res->assertOk();
+    expect($res->json('data'))->toHaveCount(1)->and($res->json('data.0.email'))->toBe('alice@x.it');
+});
+
+it('la lista/dettaglio utente include i ruoli assegnati', function () {
+    grantAdmin('adm', ['iam:users.read']);
+    $u = User::create(['email' => 'a@x.it']);
+    Grant::create(['subject_type' => 'user', 'subject_id' => $u->id, 'privilege_type' => 'role', 'privilege_key' => 'iam:iam-admin']);
+
+    $res = $this->getJson("/api/iam/v1/users/{$u->id}", ['X-Test-Auth' => 'adm']);
+
+    $res->assertOk();
+    expect($res->json('data.roles'))->toContain('iam:iam-admin');
+});
+
+it('elenca i grant attivi di un utente e ne revoca uno (idempotente, audit una volta)', function () {
+    grantAdmin('adm', ['iam:users.read', 'iam:grants.manage']);
+    $u = User::create(['email' => 'a@x.it']);
+    $g = Grant::create(['subject_type' => 'user', 'subject_id' => $u->id, 'privilege_type' => 'permission', 'privilege_key' => 'warehouse:stock.read']);
+
+    $list = $this->getJson("/api/iam/v1/users/{$u->id}/grants", ['X-Test-Auth' => 'adm']);
+    $list->assertOk();
+    expect($list->json('data.grants'))->toHaveCount(1)->and($list->json('data.grants.0.id'))->toBe($g->id);
+
+    $this->postJson("/api/iam/v1/grants/{$g->id}/revoke", [], ['X-Test-Auth' => 'adm', 'Idempotency-Key' => 'rv1'])
+        ->assertOk()->assertJsonPath('data.id', $g->id);
+    // second revoke (new key) is a grant-level no-op → no second audit event
+    $this->postJson("/api/iam/v1/grants/{$g->id}/revoke", [], ['X-Test-Auth' => 'adm', 'Idempotency-Key' => 'rv2'])->assertOk();
+
+    expect($g->fresh()->revoked_at)->not->toBeNull()
+        ->and(AuditEvent::query()->where('event_type', 'iam.grant.revoked')->where('target_id', $g->id)->count())->toBe(1)
+        ->and($this->getJson("/api/iam/v1/users/{$u->id}/grants", ['X-Test-Auth' => 'adm'])->json('data.grants'))->toHaveCount(0);
+});
+
+it('revoke di un grant richiede iam:grants.manage (403)', function () {
+    grantAdmin('adm', ['iam:users.read']);
+    $g = Grant::create(['subject_type' => 'user', 'subject_id' => 'u', 'privilege_type' => 'permission', 'privilege_key' => 'p']);
+    $this->postJson("/api/iam/v1/grants/{$g->id}/revoke", [], ['X-Test-Auth' => 'adm', 'Idempotency-Key' => 'rvx'])->assertStatus(403);
+});
+
+/** Vincola l'attore all'org "org_acme" (per i test di isolamento tenant). */
+function bindOrgBoundResolver(): void
+{
+    app()->bind(AdminActorResolver::class, fn (): AdminActorResolver => new class implements AdminActorResolver
+    {
+        public function resolve(Request $request): ?AdminContext
+        {
+            $id = $request->headers->get('X-Test-Auth');
+
+            return is_string($id) && $id !== '' ? new AdminContext(new SubjectRef('user', $id), 'org_acme') : null;
+        }
+    });
+}
+
+it('un admin org-bound non può revocare un grant globale/di altro tenant (404, fail-closed)', function () {
+    bindOrgBoundResolver();
+    grantAdmin('adm', ['iam:grants.manage']); // grant globale → vale anche per l'attore org-bound
+    $global = Grant::create(['subject_type' => 'user', 'subject_id' => 'u', 'privilege_type' => 'permission', 'privilege_key' => 'p']); // organization_id null
+
+    $this->postJson("/api/iam/v1/grants/{$global->id}/revoke", [], ['X-Test-Auth' => 'adm', 'Idempotency-Key' => 'ts1'])
+        ->assertStatus(404);
+    expect($global->fresh()->revoked_at)->toBeNull();
+});
+
+it('un admin org-bound non può aggiornare un utente non membro (404)', function () {
+    bindOrgBoundResolver();
+    grantAdmin('adm', ['iam:users.manage']);
+    $outsider = User::create(['email' => 'x@other.it']); // non membro di org_acme
+
+    $this->patchJson("/api/iam/v1/users/{$outsider->id}", ['name' => 'X'], ['X-Test-Auth' => 'adm', 'Idempotency-Key' => 'tu1'])
+        ->assertStatus(404);
+});

@@ -173,6 +173,7 @@ final class AccessReviewsController extends AdminController
             'privilege_type' => $grant?->privilege_type,
             'privilege_key' => $grant?->privilege_key,
             'application_key' => $grant?->application_key,
+            'effect' => $grant?->effect,
         ];
     }
 }

@@ -63,6 +63,7 @@ final class AuditController extends AdminController
             'seq' => $e->getAttribute('seq'),
             'stream' => $e->stream,
             'event_type' => $e->event_type,
+            'actor_user_id' => $e->getAttribute('actor_user_id'),
             'target_type' => $e->getAttribute('target_type'),
             'target_id' => $e->getAttribute('target_id'),
             'organization_id' => $e->getAttribute('organization_id'),

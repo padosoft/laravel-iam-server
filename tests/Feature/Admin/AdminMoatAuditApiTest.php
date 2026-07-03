@@ -69,3 +69,16 @@ it('audit: elenca gli eventi e verifica la hash-chain', function () {
     $this->postJson('/api/iam/v1/audit/verify-chain?stream=admin', [], ['X-Test-Auth' => 'adm', 'Idempotency-Key' => 'v1'])
         ->assertOk()->assertJsonPath('data.valid', true);
 });
+
+it('audit: il summary espone actor_user_id (colonna Actor)', function () {
+    app(AuditRecorder::class)->record([
+        'stream' => 'auth', 'event_type' => 'auth.login.succeeded',
+        'actor_user_id' => 'usr_actor', 'target_type' => 'user', 'target_id' => 'usr_actor',
+    ]);
+    grantAdmin('adm', ['iam:audit.read']);
+
+    $res = $this->getJson('/api/iam/v1/audit/events?stream=auth', ['X-Test-Auth' => 'adm']);
+
+    $res->assertOk();
+    expect($res->json('data.0.actor_user_id'))->toBe('usr_actor');
+});
