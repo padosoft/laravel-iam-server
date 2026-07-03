@@ -106,7 +106,8 @@ it('sessions: elenca e revoca una sessione (audit + idempotente)', function () {
 
 it('sessions: il summary espone last_active_at (alias), step-up, revoked_reason e un device_tag privacy-safe', function () {
     grantAdmin('adm', ['iam:sessions.read']);
-    $s = makeSession(['step_up_at' => now(), 'device_fingerprint_hash' => str_repeat('a', 64)]);
+    // No device fingerprint (the Fortify login flow sets none) → the tag falls back to the UA hash.
+    $s = makeSession(['step_up_at' => now(), 'user_agent_hash' => str_repeat('b', 64)]);
 
     $res = $this->getJson('/api/iam/v1/sessions', ['X-Test-Auth' => 'adm'])->assertOk();
 
@@ -114,8 +115,17 @@ it('sessions: il summary espone last_active_at (alias), step-up, revoked_reason 
         ->and($res->json('data.0.last_active_at'))->toBe($res->json('data.0.last_activity_at'))
         ->and($res->json('data.0.last_active_at'))->not->toBeNull()
         ->and($res->json('data.0.step_up_at'))->not->toBeNull()
-        ->and($res->json('data.0.device_tag'))->toBe('aaaaaaaaaa') // first 10 of the fingerprint hash
+        ->and($res->json('data.0.device_tag'))->toBe('bbbbbbbbbb') // first 10 of the user-agent hash
         ->and($res->json('data.0'))->toHaveKeys(['created_at', 'revoked_reason']);
+});
+
+it('sessions: device_tag preferisce il device fingerprint quando presente', function () {
+    grantAdmin('adm', ['iam:sessions.read']);
+    $s = makeSession(['device_fingerprint_hash' => str_repeat('a', 64), 'user_agent_hash' => str_repeat('b', 64)]);
+
+    $res = $this->getJson("/api/iam/v1/sessions/{$s->id}", ['X-Test-Auth' => 'adm'])->assertOk();
+
+    expect($res->json('data.device_tag'))->toBe('aaaaaaaaaa');
 });
 
 it('sessions/revoke-all revoca tutte le sessioni attive di un utente', function () {
