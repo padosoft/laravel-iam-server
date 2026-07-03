@@ -63,8 +63,17 @@ final class ApplicationsController extends AdminController
     public function rotateSecret(Request $request, string $app): JsonResponse
     {
         $client = $this->clientFor($this->find($request, $app));
+        if ($client->revoked_at !== null) {
+            throw ApiProblemException::conflict('Client revocato: non è ruotabile.');
+        }
         if (!$client->is_confidential) {
             throw ApiProblemException::unprocessable('Solo i client confidential hanno un secret da ruotare.');
+        }
+        // Serializza le rotazioni: una seconda rotazione mentre il secret precedente è ancora nel grace lo
+        // scarterebbe, ORFANEGGIANDO il secret originale (un'app non ancora migrata si romperebbe prima della
+        // sua finestra). Blocca finché il grace non scade (o il client non viene revocato).
+        if ($client->previousSecretActive()) {
+            throw ApiProblemException::conflict('Rotazione già in corso: il secret precedente è valido (grace) fino a '.$client->secret_previous_expires_at?->toIso8601String().'. Completa il rollover prima di ruotare di nuovo.');
         }
         $plain = $client->rotateSecret(self::intConfig('iam.oauth.client_secret_grace', 259200), self::ttlSeconds());
         $this->audit($request, 'iam.client.secret_rotated', 'oauth_client', $client->id, ['client_id' => $client->client_id]);
@@ -100,7 +109,8 @@ final class ApplicationsController extends AdminController
     {
         $ttl = config('iam.oauth.client_secret_ttl');
 
-        return is_numeric($ttl) ? (int) $ttl : null;
+        // Solo un TTL positivo ha senso; non-numerico o <= 0 → nessuna scadenza (null).
+        return is_numeric($ttl) && (int) $ttl > 0 ? (int) $ttl : null;
     }
 
     private static function intConfig(string $key, int $default): int
