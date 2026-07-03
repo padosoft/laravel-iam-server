@@ -44,10 +44,18 @@ final class ClientRepository implements ClientRepositoryInterface
         }
 
         // Client confidential → autenticazione via secret (hash). Mai accettare secret vuoto.
+        // Durante una rotazione, il secret PRECEDENTE resta valido finché non scade il grace: così l'app
+        // può aggiornare la config senza downtime. La `secret_expires_at` del corrente è "soft" (guida gli
+        // alert, non fa fallire l'auth qui) per non rompere un'app che non ha ancora ruotato.
         if ($client->is_confidential) {
-            return is_string($client->secret) && $client->secret !== ''
-                && is_string($clientSecret) && $clientSecret !== ''
-                && Hash::check($clientSecret, $client->secret);
+            if (!is_string($clientSecret) || $clientSecret === '') {
+                return false;
+            }
+            if (is_string($client->secret) && $client->secret !== '' && Hash::check($clientSecret, $client->secret)) {
+                return true;
+            }
+
+            return $client->previousSecretActive() && Hash::check($clientSecret, (string) $client->secret_previous);
         }
 
         // Client public → nessun secret atteso (l'integrità del flusso è garantita da PKCE

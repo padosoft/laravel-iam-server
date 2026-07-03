@@ -138,6 +138,9 @@ Route::get('recommendations/least-privilege', [RecommendationsController::class,
 Route::get('applications', [ApplicationsController::class, 'index'])->middleware('iam.can:iam:applications.read');
 Route::get('applications/{app}', [ApplicationsController::class, 'show'])->middleware('iam.can:iam:applications.read');
 Route::get('applications/{app}/manifest', [ApplicationsController::class, 'manifest'])->middleware('iam.can:iam:applications.read');
+Route::get('applications/{app}/client', [ApplicationsController::class, 'client'])->middleware('iam.can:iam:applications.read');
+Route::post('applications/{app}/rotate-secret', [ApplicationsController::class, 'rotateSecret'])->middleware('iam.can:iam:clients.manage');
+Route::post('applications/{app}/revoke-client', [ApplicationsController::class, 'revokeClient'])->middleware('iam.can:iam:clients.manage');
 Route::post('applications/{app}/manifests', [ManifestsController::class, 'store'])->middleware('iam.can:iam:manifests.submit');
 Route::get('manifests', [ManifestsController::class, 'index'])->middleware('iam.can:iam:manifests.read');
 Route::get('manifests/{manifest}', [ManifestsController::class, 'show'])->middleware('iam.can:iam:manifests.read');
