@@ -9,6 +9,7 @@ use Padosoft\Iam\Contracts\Crypto\TokenSigner;
 use Padosoft\Iam\Contracts\Identity\SessionMeta;
 use Padosoft\Iam\Contracts\Identity\SessionRegistry;
 use Padosoft\Iam\Contracts\Support\SubjectRef;
+use Padosoft\Iam\Domain\Identity\Models\Session;
 use Padosoft\Iam\Domain\Identity\Models\User;
 use Padosoft\Iam\Domain\Identity\Session\LogoutTokenIssuer;
 use Padosoft\Iam\Domain\Identity\Session\SessionStarter;
@@ -76,6 +77,38 @@ it('SessionStarter crea la sessione e lega il sid alla sessione Laravel', functi
 
     expect(app(SessionRegistry::class)->active($ref->id))->toBeTrue()
         ->and($store->get('iam_sid'))->toBe($ref->id);
+});
+
+it('SessionStarter salva ip/UA in chiaro con ip_mode=full', function () {
+    config(['iam.audit.ip_mode' => 'full', 'iam.audit.ua_mode' => 'full']);
+    $user = new User;
+    $user->forceFill(['email' => 'ipfull@acme.test'])->save();
+    $store = app('session.store');
+    $store->start();
+    $request = Request::create('/login', 'POST', [], [], [], ['REMOTE_ADDR' => '198.51.100.5', 'HTTP_USER_AGENT' => 'UA-Test']);
+    $request->setLaravelSession($store);
+
+    $ref = app(SessionStarter::class)->start($user->id, $request, Aal::AAL1);
+
+    $row = Session::query()->findOrFail($ref->id);
+    expect($row->getAttribute('ip_hash'))->toBe('198.51.100.5')
+        ->and($row->getAttribute('user_agent_hash'))->toBe('UA-Test');
+});
+
+it('SessionStarter hasha ip/UA in modalità hash (default)', function () {
+    config(['iam.audit.ip_mode' => 'hash', 'iam.audit.ua_mode' => 'hash']);
+    $user = new User;
+    $user->forceFill(['email' => 'iphash@acme.test'])->save();
+    $store = app('session.store');
+    $store->start();
+    $request = Request::create('/login', 'POST', [], [], [], ['REMOTE_ADDR' => '198.51.100.5']);
+    $request->setLaravelSession($store);
+
+    $ref = app(SessionStarter::class)->start($user->id, $request, Aal::AAL1);
+
+    $row = Session::query()->findOrFail($ref->id);
+    expect($row->getAttribute('ip_hash'))->not->toBe('198.51.100.5')
+        ->and(strlen((string) $row->getAttribute('ip_hash')))->toBe(64); // sha256 hex
 });
 
 it('LogoutTokenIssuer emette un logout_token valido (sid + events, niente nonce)', function () {

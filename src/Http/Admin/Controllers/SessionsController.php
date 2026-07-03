@@ -116,10 +116,20 @@ final class SessionsController extends AdminController
 
                 return is_string($hash) ? substr($hash, 0, 10) : null;
             })(),
+            // Readable IP/UA are exposed ONLY when iam.audit.ip_mode/ua_mode = full (forensics); in the
+            // default `hash` mode the columns hold one-way hashes, so we never surface them as ip/user_agent.
+            'ip' => $this->readable($s->getAttribute('ip_hash'), 'ip_mode'),
+            'user_agent' => $this->readable($s->getAttribute('user_agent_hash'), 'ua_mode'),
             'created_at' => $s->created_at?->toIso8601String(),
             'absolute_expires_at' => $s->absolute_expires_at->toIso8601String(),
             'revoked_at' => $s->revoked_at?->toIso8601String(),
             'revoked_reason' => $s->revoked_reason,
         ];
+    }
+
+    /** Surface a stored IP/UA only in `full` mode (clear value); in `hash`/`none` mode return null. */
+    private function readable(mixed $value, string $modeKey): ?string
+    {
+        return config('iam.audit.'.$modeKey, 'hash') === 'full' && is_string($value) ? $value : null;
     }
 }

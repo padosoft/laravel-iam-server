@@ -14,7 +14,9 @@ use Padosoft\Iam\Contracts\Support\SubjectRef;
 /**
  * Avvia una sessione IAM al login (chiamato dal flusso Fortify/passkeys/federato, M5.4) e ne lega
  * il `sid` alla sessione Laravel, così /authorize lo ritrova e lo inserisce nei token (doc 10 §3).
- * IP/UA sono salvati solo come hash (privacy, doc 12).
+ * IP/UA seguono `iam.audit.ip_mode`/`ua_mode` (doc 12): `hash` (default, privacy) salva solo l'hash
+ * salato; `full` salva il valore in chiaro (forense: correlazione per uguaglianza, visibile solo a chi
+ * ha il permesso sessions.read); `none` non salva nulla. Il device-fingerprint resta sempre hashato.
  */
 final class SessionStarter
 {
@@ -26,8 +28,8 @@ final class SessionStarter
             aal: $aal,
             organizationId: $organizationId,
             deviceFingerprintHash: $this->hash($request->header('X-Device-Fingerprint')),
-            ipHash: $this->hash($request->ip()),
-            userAgentHash: $this->hash($request->userAgent()),
+            ipHash: $this->transform($request->ip(), 'ip_mode'),
+            userAgentHash: $this->transform($request->userAgent(), 'ua_mode'),
             idleTimeout: $this->timeout('idle_timeout', 1800),
             absoluteTimeout: $this->timeout('absolute_timeout', 43200),
         );
@@ -37,6 +39,23 @@ final class SessionStarter
         $request->session()->migrate(true); // anti session-fixation: rigenera l'ID al login
 
         return $ref;
+    }
+
+    /**
+     * Applica `iam.audit.<modeKey>` a un valore IP/UA: none → null, full → in chiaro, altrimenti hash salato.
+     * La colonna resta `*_hash` ma in modalità `full` contiene il valore leggibile (come per l'audit).
+     */
+    private function transform(?string $value, string $modeKey): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+        $mode = config('iam.audit.'.$modeKey, 'hash');
+        if ($mode === 'none') {
+            return null;
+        }
+
+        return $mode === 'full' ? $value : $this->hash($value);
     }
 
     private function hash(?string $value): ?string

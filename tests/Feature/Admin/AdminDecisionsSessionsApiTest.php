@@ -128,6 +128,29 @@ it('sessions: device_tag preferisce il device fingerprint quando presente', func
     expect($res->json('data.device_tag'))->toBe('aaaaaaaaaa');
 });
 
+it('sessions: espone ip/user_agent in chiaro SOLO con ip_mode/ua_mode = full', function () {
+    config(['iam.audit.ip_mode' => 'full', 'iam.audit.ua_mode' => 'full']);
+    grantAdmin('adm', ['iam:sessions.read']);
+    // In full mode the *_hash columns carry the clear value (as the SessionStarter now stores them).
+    $s = makeSession(['ip_hash' => '203.0.113.7', 'user_agent_hash' => 'Mozilla/5.0 (Test)']);
+
+    $res = $this->getJson("/api/iam/v1/sessions/{$s->id}", ['X-Test-Auth' => 'adm'])->assertOk();
+
+    expect($res->json('data.ip'))->toBe('203.0.113.7')
+        ->and($res->json('data.user_agent'))->toBe('Mozilla/5.0 (Test)');
+});
+
+it('sessions: in modalità hash (default) NON espone ip/user_agent', function () {
+    config(['iam.audit.ip_mode' => 'hash', 'iam.audit.ua_mode' => 'hash']);
+    grantAdmin('adm', ['iam:sessions.read']);
+    $s = makeSession(['ip_hash' => str_repeat('a', 64), 'user_agent_hash' => str_repeat('b', 64)]);
+
+    $res = $this->getJson("/api/iam/v1/sessions/{$s->id}", ['X-Test-Auth' => 'adm'])->assertOk();
+
+    expect($res->json('data.ip'))->toBeNull()
+        ->and($res->json('data.user_agent'))->toBeNull();
+});
+
 it('sessions/revoke-all revoca tutte le sessioni attive di un utente', function () {
     grantAdmin('adm', ['iam:sessions.manage']);
     makeSession(['user_id' => 'usr_z']);

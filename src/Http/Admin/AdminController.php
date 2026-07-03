@@ -122,6 +122,8 @@ abstract class AdminController
         $context = $this->context($request);
         $correlation = $request->headers->get('Correlation-Id');
 
+        // Thread the request IP/UA so the AuditRecorder can honour iam.audit.ip_mode/ua_mode (hash by
+        // default; `full` records them in clear for forensics). Without this the audit ip/ua stay null.
         app(AuditRecorder::class)->record([
             'stream' => 'admin',
             'event_type' => $eventType,
@@ -132,6 +134,6 @@ abstract class AdminController
             'before_json' => $before,
             'after_json' => $after,
             'metadata_json' => array_merge(['actor' => $context->actorRef()], $extra),
-        ]);
+        ], [], null, $request->ip(), $request->userAgent());
     }
 }

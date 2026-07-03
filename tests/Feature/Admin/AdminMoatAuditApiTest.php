@@ -82,3 +82,25 @@ it('audit: il summary espone actor_user_id (colonna Actor)', function () {
     $res->assertOk();
     expect($res->json('data.0.actor_user_id'))->toBe('usr_actor');
 });
+
+it('audit: espone ip/user_agent in chiaro SOLO con ip_mode/ua_mode = full', function () {
+    config(['iam.audit.ip_mode' => 'full', 'iam.audit.ua_mode' => 'full']);
+    app(AuditRecorder::class)->record(['stream' => 'admin', 'event_type' => 'iam.test.ip'], [], null, '198.51.100.9', 'UA-Rec');
+    grantAdmin('adm', ['iam:audit.read']);
+
+    $res = $this->getJson('/api/iam/v1/audit/events?stream=admin', ['X-Test-Auth' => 'adm'])->assertOk();
+
+    expect($res->json('data.0.ip'))->toBe('198.51.100.9')
+        ->and($res->json('data.0.user_agent'))->toBe('UA-Rec');
+});
+
+it('audit: in modalità hash (default) NON espone ip/user_agent leggibili', function () {
+    config(['iam.audit.ip_mode' => 'hash', 'iam.audit.ua_mode' => 'hash']);
+    app(AuditRecorder::class)->record(['stream' => 'admin', 'event_type' => 'iam.test.ip'], [], null, '198.51.100.9', 'UA-Rec');
+    grantAdmin('adm', ['iam:audit.read']);
+
+    $res = $this->getJson('/api/iam/v1/audit/events?stream=admin', ['X-Test-Auth' => 'adm'])->assertOk();
+
+    expect($res->json('data.0.ip'))->toBeNull()
+        ->and($res->json('data.0.user_agent'))->toBeNull();
+});

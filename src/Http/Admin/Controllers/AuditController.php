@@ -68,6 +68,15 @@ final class AuditController extends AdminController
             'target_id' => $e->getAttribute('target_id'),
             'organization_id' => $e->getAttribute('organization_id'),
             'occurred_at' => $e->occurred_at->toIso8601String(),
+            // Readable actor IP/UA only when iam.audit.ip_mode/ua_mode = full (forensics); null otherwise.
+            'ip' => $this->readable($e->getAttribute('ip_hash'), 'ip_mode'),
+            'user_agent' => $this->readable($e->getAttribute('user_agent_hash'), 'ua_mode'),
         ];
+    }
+
+    /** Surface a stored IP/UA only in `full` mode (clear value); in `hash`/`none` mode return null. */
+    private function readable(mixed $value, string $modeKey): ?string
+    {
+        return config('iam.audit.'.$modeKey, 'hash') === 'full' && is_string($value) ? $value : null;
     }
 }
