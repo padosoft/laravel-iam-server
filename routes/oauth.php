@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\Route;
 use Padosoft\Iam\Http\Controllers\OAuth\AuthorizeController;
+use Padosoft\Iam\Http\Controllers\OAuth\ClientSecretController;
 use Padosoft\Iam\Http\Controllers\OAuth\IntrospectionController;
 use Padosoft\Iam\Http\Controllers\OAuth\RevocationController;
 use Padosoft\Iam\Http\Controllers\OAuth\TokenController;
@@ -19,3 +20,5 @@ Route::get('authorize', [AuthorizeController::class, 'authorize'])
 Route::post('token', [TokenController::class, 'token'])->name('iam.oauth.token');
 Route::post('introspect', [IntrospectionController::class, 'introspect'])->name('iam.oauth.introspect');
 Route::post('revoke', [RevocationController::class, 'revoke'])->name('iam.oauth.revoke');
+// Self-fetch del secret auto-ruotato: il client si autentica col proprio secret e ritira il nuovo (doc 13 §4.2).
+Route::post('client-secret', [ClientSecretController::class, 'current'])->name('iam.oauth.client_secret');
