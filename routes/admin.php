@@ -10,6 +10,7 @@ use Padosoft\Iam\Http\Admin\Controllers\AuditController;
 use Padosoft\Iam\Http\Admin\Controllers\DecisionsController;
 use Padosoft\Iam\Http\Admin\Controllers\DirectorySourcesController;
 use Padosoft\Iam\Http\Admin\Controllers\FederatedProvidersController;
+use Padosoft\Iam\Http\Admin\Controllers\GrantsController;
 use Padosoft\Iam\Http\Admin\Controllers\GroupsController;
 use Padosoft\Iam\Http\Admin\Controllers\ManifestsController;
 use Padosoft\Iam\Http\Admin\Controllers\MetricsController;
@@ -29,7 +30,9 @@ use Padosoft\Iam\Http\Admin\Controllers\WebhooksController;
 // Users (doc 16 §3.2)
 Route::get('users', [UsersController::class, 'index'])->middleware('iam.can:iam:users.read');
 Route::get('users/{user}', [UsersController::class, 'show'])->middleware('iam.can:iam:users.read');
+Route::patch('users/{user}', [UsersController::class, 'update'])->middleware('iam.can:iam:users.manage');
 Route::get('users/{user}/effective-permissions', [UsersController::class, 'effectivePermissions'])->middleware('iam.can:iam:users.read');
+Route::get('users/{user}/grants', [UsersController::class, 'grants'])->middleware('iam.can:iam:users.read');
 Route::post('users/{user}/suspend', [UsersController::class, 'suspend'])->middleware('iam.can:iam:users.manage');
 Route::post('users/{user}/reactivate', [UsersController::class, 'reactivate'])->middleware('iam.can:iam:users.manage');
 Route::post('users/{user}/sessions/revoke-all', [SessionsController::class, 'revokeAllForUser'])->middleware('iam.can:iam:sessions.manage');
@@ -101,6 +104,9 @@ Route::post('directory-sources/{source}/test', [DirectorySourcesController::clas
 Route::get('policies-wizard/permissions', [PoliciesWizardController::class, 'permissions'])->middleware('iam.can:iam:policies.read');
 Route::post('policies-wizard/preview', [PoliciesWizardController::class, 'preview'])->middleware('iam.can:iam:policies.read');
 Route::post('policies-wizard/commit', [PoliciesWizardController::class, 'commit'])->middleware('iam.can:iam:grants.manage');
+
+// Grants — direct revoke (the symmetric remove for policies-wizard/commit)
+Route::post('grants/{grant}/revoke', [GrantsController::class, 'revoke'])->middleware('iam.can:iam:grants.manage');
 
 // Webhooks (doc 16 §3.24, doc 19 §7) — CRUD + test-delivery + DLQ replay sul backend M7
 Route::get('webhooks', [WebhooksController::class, 'index'])->middleware('iam.can:iam:webhooks.read');

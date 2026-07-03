@@ -131,7 +131,8 @@ it('access-reviews: gli item espongono subject e access dal grant', function () 
         ->assertJsonPath('data.0.subject_type', 'user')
         ->assertJsonPath('data.0.subject_id', 'usr_g')
         ->assertJsonPath('data.0.privilege_key', 'warehouse:stock.read')
-        ->assertJsonPath('data.0.application_key', 'warehouse');
+        ->assertJsonPath('data.0.application_key', 'warehouse')
+        ->assertJsonPath('data.0.effect', 'permit');
 });
 
 it('access-reviews: cancel annulla una campagna senza toccare i grant e blocca la riapertura (409)', function () {

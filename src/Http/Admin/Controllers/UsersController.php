@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Padosoft\Iam\Http\Admin\Controllers;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -36,11 +37,92 @@ final class UsersController extends AdminController
             $query->where('status', $status['status']);
         }
 
+        // Free-text search over name/email (console user picker). LIKE with escaped wildcards.
+        $q = $request->query('q');
+        if (is_string($q) && trim($q) !== '') {
+            $needle = '%'.addcslashes(trim($q), '%_\\').'%';
+            $query->where(function (Builder $w) use ($needle): void {
+                $w->where('name', 'like', $needle)->orWhere('email', 'like', $needle);
+            });
+        }
+
+        // Eager-load grants so summary() can list the subject's roles without an N+1 (filtered in summary).
+        $query->with('grants');
+
         return $this->paginate(
             $query,
             $request,
             fn (Model $u): array => $u instanceof User ? $this->summary($u) : [],
         );
+    }
+
+    public function update(Request $request, string $user): JsonResponse
+    {
+        $model = $this->find($user, $this->context($request)->organizationId);
+
+        $changes = [];
+        $errors = [];
+
+        $name = $request->input('name');
+        if ($name !== null) {
+            if (!is_string($name) || trim($name) === '' || mb_strlen($name) > 255) {
+                $errors['name'] = ['name deve essere una stringa non vuota (max 255).'];
+            } else {
+                $changes['name'] = $name;
+            }
+        }
+
+        $email = $request->input('email');
+        if ($email !== null) {
+            if (!is_string($email) || filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
+                $errors['email'] = ['email non valida.'];
+            } elseif (User::query()->where('email', $email)->whereKeyNot($model->getKey())->exists()) {
+                $errors['email'] = ['email già in uso.'];
+            } else {
+                $changes['email'] = $email;
+            }
+        }
+
+        if ($errors !== []) {
+            throw ApiProblemException::unprocessable('Payload non valido.', $errors);
+        }
+        if ($changes === []) {
+            throw ApiProblemException::unprocessable('Nessun campo da aggiornare (name/email).');
+        }
+
+        $before = ['name' => $model->name, 'email' => $model->email];
+        $model->fill($changes)->save();
+        $this->audit($request, 'iam.user.updated', 'user', $user, [], $before, $changes);
+
+        return $this->ok($this->summary($model->fresh() ?? $model));
+    }
+
+    public function grants(Request $request, string $user): JsonResponse
+    {
+        $org = $this->context($request)->organizationId;
+        $this->find($user, $org); // 404 se inesistente / fuori dal tenant
+
+        $grants = Grant::query()->active()
+            ->where('subject_type', 'user')
+            ->where('subject_id', $user)
+            ->when($org !== null, fn ($q) => $q->where(fn ($w) => $w->whereNull('organization_id')->orWhere('organization_id', $org)))
+            ->orderBy('privilege_type')
+            ->orderBy('privilege_key')
+            ->get();
+
+        return $this->ok([
+            'user_id' => $user,
+            'grants' => $grants->map(fn (Grant $g): array => [
+                'id' => $g->id,
+                'privilege_type' => $g->privilege_type,
+                'privilege_key' => $g->privilege_key,
+                'effect' => $g->effect,
+                'application_key' => $g->application_key,
+                'is_privileged' => $g->is_privileged,
+                'valid_until' => $g->valid_until?->toIso8601String(),
+                'source' => $g->source,
+            ])->all(),
+        ]);
     }
 
     public function show(Request $request, string $user): JsonResponse
@@ -127,11 +209,19 @@ final class UsersController extends AdminController
     {
         $createdAt = $u->getAttribute('created_at');
 
+        // Active role grants held by the user (privilege_key = role full_key). Eager-loaded in index();
+        // for single-user reads it falls back to a query. The console derives the super-admin badge from
+        // this list (holds the iam-admin role).
+        $roles = $u->relationLoaded('grants')
+            ? $u->grants->filter(fn (Grant $g): bool => $g->privilege_type === 'role' && $g->revoked_at === null)->pluck('privilege_key')->values()->all()
+            : $u->grants()->where('privilege_type', 'role')->whereNull('revoked_at')->pluck('privilege_key')->values()->all();
+
         return [
             'id' => $u->id,
             'email' => $u->email,
             'name' => $u->name,
             'status' => $u->status,
+            'roles' => array_values(array_filter($roles, 'is_string')),
             'created_at' => $createdAt instanceof \DateTimeInterface ? $createdAt->format(\DateTimeInterface::ATOM) : null,
         ];
     }

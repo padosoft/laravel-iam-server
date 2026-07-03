@@ -104,6 +104,9 @@ final class SessionsController extends AdminController
             // console-friendly alias for the grid's "last active" column (privacy: IP/UA are hashed only).
             'last_active_at' => $s->last_activity_at->toIso8601String(),
             'step_up_at' => $s->step_up_at?->toIso8601String(),
+            // Privacy: IP/UA are stored only as salted one-way hashes. Expose a short prefix of the device
+            // fingerprint as a non-reversible "device tag" so an operator can tell sessions/devices apart.
+            'device_tag' => is_string($deviceHash = $s->getAttribute('device_fingerprint_hash')) ? substr($deviceHash, 0, 10) : null,
             'created_at' => $s->created_at?->toIso8601String(),
             'absolute_expires_at' => $s->absolute_expires_at->toIso8601String(),
             'revoked_at' => $s->revoked_at?->toIso8601String(),
