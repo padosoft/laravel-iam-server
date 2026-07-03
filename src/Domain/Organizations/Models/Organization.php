@@ -7,6 +7,7 @@ namespace Padosoft\Iam\Domain\Organizations\Models;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
 use Padosoft\Iam\Domain\Authorization\Models\Grant;
 
 /**
@@ -15,6 +16,9 @@ use Padosoft\Iam\Domain\Authorization\Models\Grant;
  * @property string $id
  * @property string $key
  * @property string $name
+ * @property string $status
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
  */
 final class Organization extends Model
 {

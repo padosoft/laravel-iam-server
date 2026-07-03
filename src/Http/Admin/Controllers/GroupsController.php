@@ -12,6 +12,7 @@ use Illuminate\Http\Request;
 use Padosoft\Iam\Domain\Groups\GroupMembershipService;
 use Padosoft\Iam\Domain\Groups\Models\Group;
 use Padosoft\Iam\Domain\Groups\Models\GroupMember;
+use Padosoft\Iam\Domain\Organizations\Models\Organization;
 use Padosoft\Iam\Http\Admin\AdminController;
 use Padosoft\Iam\Http\Admin\Support\ApiProblemException;
 
@@ -46,8 +47,16 @@ final class GroupsController extends AdminController
         $source = $request->input('source');
         $org = $this->context($request)->organizationId;
         if ($org === null) {
-            // Un gruppo è sempre tenant-scoped: senza un'org effettiva non si può creare in modo sicuro.
-            throw ApiProblemException::unprocessable('organization obbligatoria per creare un gruppo.');
+            // A global admin (no tenant in context) must target an org explicitly via organization_id.
+            $requested = $request->input('organization_id');
+            if (!is_string($requested) || $requested === '') {
+                throw ApiProblemException::unprocessable('Campo organization_id obbligatorio (nessun tenant nel contesto).', ['organization_id' => ['organization_id è obbligatorio']]);
+            }
+            $found = Organization::query()->where('key', $requested)->first() ?? Organization::query()->find($requested);
+            if ($found === null) {
+                throw ApiProblemException::unprocessable('organization_id non valido.', ['organization_id' => ['organizzazione inesistente']]);
+            }
+            $org = $found->id;
         }
 
         // Create diretto: l'unique (organization_id, key) è applicato dal DB → un duplicato è 409,

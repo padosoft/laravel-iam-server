@@ -14,6 +14,7 @@ use Padosoft\Iam\Http\Admin\Controllers\GrantsController;
 use Padosoft\Iam\Http\Admin\Controllers\GroupsController;
 use Padosoft\Iam\Http\Admin\Controllers\ManifestsController;
 use Padosoft\Iam\Http\Admin\Controllers\MetricsController;
+use Padosoft\Iam\Http\Admin\Controllers\OrganizationsController;
 use Padosoft\Iam\Http\Admin\Controllers\PoliciesWizardController;
 use Padosoft\Iam\Http\Admin\Controllers\RecommendationsController;
 use Padosoft\Iam\Http\Admin\Controllers\RelationsController;
@@ -74,6 +75,12 @@ Route::post('access-requests/{accessRequest}/steps/{step}/approve', [AccessReque
 Route::post('access-requests/{accessRequest}/steps/{step}/reject', [AccessRequestsController::class, 'rejectStep'])->middleware('iam.can:iam:access_request.review');
 
 // Groups (doc 16 §3.4, doc 19 §3) — soggetti first-class; membership scrive anche la tupla ReBAC (M16)
+Route::get('organizations', [OrganizationsController::class, 'index'])->middleware('iam.can:iam:organizations.read');
+Route::post('organizations', [OrganizationsController::class, 'store'])->middleware('iam.can:iam:organizations.manage');
+Route::get('organizations/{organization}', [OrganizationsController::class, 'show'])->middleware('iam.can:iam:organizations.read');
+Route::patch('organizations/{organization}', [OrganizationsController::class, 'update'])->middleware('iam.can:iam:organizations.manage');
+Route::delete('organizations/{organization}', [OrganizationsController::class, 'destroy'])->middleware('iam.can:iam:organizations.manage');
+
 Route::get('groups', [GroupsController::class, 'index'])->middleware('iam.can:iam:groups.read');
 Route::post('groups', [GroupsController::class, 'store'])->middleware('iam.can:iam:groups.manage');
 Route::get('groups/{group}', [GroupsController::class, 'show'])->middleware('iam.can:iam:groups.read');

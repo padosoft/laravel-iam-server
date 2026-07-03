@@ -540,6 +540,56 @@ paths:
       responses:
         "200": { description: Richiesta rifiutata }
         "409": { $ref: "#/components/responses/Problem" }
+  /organizations:
+    get:
+      tags: [Organizations]
+      summary: Elenca le organizzazioni / tenant (cursor)
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200": { description: OK }
+    post:
+      tags: [Organizations]
+      summary: Crea un'organizzazione
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [key, name]
+              properties:
+                key: { type: string, example: acme }
+                name: { type: string, example: Acme Inc }
+      responses:
+        "201": { description: Organizzazione creata }
+        "409": { $ref: "#/components/responses/Problem" }
+  /organizations/{organization}:
+    get:
+      tags: [Organizations]
+      summary: Dettaglio organizzazione
+      parameters: [{ name: organization, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "404": { $ref: "#/components/responses/Problem" }
+    patch:
+      tags: [Organizations]
+      summary: Aggiorna un'organizzazione (name/status)
+      parameters:
+        - { name: organization, in: path, required: true, schema: { type: string } }
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200": { description: OK }
+    delete:
+      tags: [Organizations]
+      summary: Sospende (soft) un'organizzazione
+      parameters:
+        - { name: organization, in: path, required: true, schema: { type: string } }
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200": { description: OK }
   /groups:
     get:
       tags: [Groups]
@@ -564,6 +614,7 @@ paths:
                 key: { type: string, example: eng }
                 name: { type: string, example: Engineering }
                 source: { type: string, example: manual }
+                organization_id: { type: string, example: acme, description: "Richiesto se l'attore non ha un tenant nel contesto (admin globale): key o id dell'org" }
       responses:
         "201": { description: Gruppo creato }
         "409": { $ref: "#/components/responses/Problem" }
