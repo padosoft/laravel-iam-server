@@ -434,6 +434,60 @@ paths:
       responses:
         "200": { description: OK }
         "404": { $ref: "#/components/responses/Problem" }
+  /applications/{app}/client:
+    get:
+      tags: [Applications]
+      summary: Stato credenziali del client OAuth dell'app (scadenza, grace, rotazione)
+      parameters: [{ name: app, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      client_id: { type: string }
+                      secret_expires_at: { type: string, nullable: true }
+                      grace_active: { type: boolean }
+                      grace_until: { type: string, nullable: true }
+                      secret_status: { type: string, enum: [ok, expiring, expired, revoked, public] }
+        "404": { $ref: "#/components/responses/Problem" }
+  /applications/{app}/rotate-secret:
+    post:
+      tags: [Applications]
+      summary: Ruota il client_secret (nuovo secret una volta; il vecchio resta valido per il grace)
+      parameters:
+        - { name: app, in: path, required: true, schema: { type: string } }
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Ruotato
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      client_id: { type: string }
+                      client_secret: { type: string, description: "nuovo secret, mostrato una sola volta" }
+                      grace_until: { type: string, nullable: true }
+        "422": { $ref: "#/components/responses/Problem" }
+  /applications/{app}/revoke-client:
+    post:
+      tags: [Applications]
+      summary: Revoca il client OAuth dell'app (immediato)
+      parameters:
+        - { name: app, in: path, required: true, schema: { type: string } }
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200": { description: Revocato }
+        "409": { $ref: "#/components/responses/Problem" }
   /applications/{app}/manifests:
     post:
       tags: [Applications]

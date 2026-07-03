@@ -96,6 +96,9 @@ final class ManifestApplier
         if ($confidential && !$hasSecret) {
             $plain = Str::random(48);
             $client->secret = Hash::make($plain); // `secret` non è fillable: assegnazione diretta
+            // Scadenza programmata del secret (null = non scade): guida gli alert di rotazione in console.
+            $ttl = config('iam.oauth.client_secret_ttl');
+            $client->secret_expires_at = is_numeric($ttl) ? now()->addSeconds((int) $ttl) : null;
             $this->generatedSecret = $plain;
         } elseif (!$confidential && $hasSecret) {
             // Transizione confidential→public: un client public non si autentica col secret, non

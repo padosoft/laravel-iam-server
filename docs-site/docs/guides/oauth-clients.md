@@ -80,6 +80,39 @@ curl -X POST https://iam.example.com/oauth/token \
 # → new access_token + new refresh_token; the old refresh token is invalidated
 ```
 
+## Client-secret rotation & expiry
+
+A client secret is issued **once** at manifest apply and stored **hashed**. Rotate it — on a leak, on a
+schedule, or before its expiry — **without downtime**: the previous secret stays valid for a **grace
+window** so the app can roll over.
+
+```bash
+# Rotate → a NEW secret is returned once; the OLD one keeps working until the grace ends.
+curl -X POST https://iam.example.com/api/iam/v1/applications/warehouse/rotate-secret \
+  -H "Idempotency-Key: $(uuidgen)"
+# → { "data": { "client_id": "cli_warehouse", "client_secret": "NEW-…-ONCE", "grace_until": "…" } }
+```
+
+**Rollover procedure (zero downtime):** rotate → deploy the new secret to the app during the grace window
+(`iam.oauth.client_secret_grace`, default **72h**) → after the grace the old secret stops validating.
+`validateClient` accepts **either** secret while the grace is active.
+
+**Scheduled expiry & alerts.** Set `IAM_OAUTH_CLIENT_SECRET_TTL` (seconds) to give new secrets a lifetime;
+`GET /api/iam/v1/applications/{app}/client` reports `secret_status` (`ok` · `expiring` · `expired` ·
+`revoked`) and `secret_expires_at`, which the console surfaces as rotation alerts. Expiry is **soft** (it
+drives alerts; the secret keeps working so an un-rotated app never breaks unexpectedly) — the **grace** end
+is the only hard cut-off, and only for the *previous* secret.
+
+**Revoke** a client immediately (kills all its auth):
+
+```bash
+curl -X POST https://iam.example.com/api/iam/v1/applications/warehouse/revoke-client -H "Idempotency-Key: $(uuidgen)"
+```
+
+Rotation/revoke require `iam:clients.manage`; reading credential status requires `iam:applications.read`.
+Automatic rotation (scheduler-driven, with app self-fetch during grace) is documented under
+[Application credentials](/guides/application-credentials).
+
 ## Token signing & JWKS
 
 Access tokens are signed with **ES256** using rotating signing keys (`iam_signing_keys`). Consumers fetch

@@ -46,6 +46,12 @@ return [
         'register_routes' => true,
         'rate_limit' => 60,             // richieste/minuto sugli endpoint OAuth (anti-abuse, doc 13 §9)
         'auth_code_ttl' => 600,        // 10m
+        // Client-secret lifecycle (doc 13 §4.1). `ttl` = scadenza programmata del NUOVO secret (null =
+        // non scade; guida gli alert quando impostato). `grace` = finestra in cui il secret PRECEDENTE
+        // resta valido dopo una rotazione → rollover a zero downtime. `warn_days` = soglia "in scadenza".
+        'client_secret_ttl' => env('IAM_OAUTH_CLIENT_SECRET_TTL'),                    // secondi | null
+        'client_secret_grace' => (int) env('IAM_OAUTH_CLIENT_SECRET_GRACE', 259200), // 72h
+        'client_secret_warn_days' => (int) env('IAM_OAUTH_CLIENT_SECRET_WARN_DAYS', 14),
         'require_pkce' => true,         // PKCE S256 obbligatorio per i client public (doc 13 §9)
         'grants' => [
             'client_credentials' => true,
