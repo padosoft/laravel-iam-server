@@ -109,6 +109,16 @@ final class ManifestRegistry
     }
 
     /**
+     * Il client_secret in chiaro generato dall'ULTIMO apply(), se ne è stato creato uno nuovo (client
+     * confidenziale senza secret pregresso). È mostrabile UNA sola volta al chiamante (CLI o Admin API)
+     * e non è mai persistito in chiaro. null se l'apply non ha generato un nuovo secret.
+     */
+    public function lastGeneratedSecret(): ?string
+    {
+        return $this->applier->generatedSecret();
+    }
+
+    /**
      * Rollback: ri-applica la PRECEDENTE versione applicata dell'app (doc 01 §10.1). La versione
      * corrente passa a rolled_back. Ritorna null se non c'è una versione precedente a cui tornare.
      *

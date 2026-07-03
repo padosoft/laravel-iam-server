@@ -49,6 +49,23 @@ it('manifests: approve poi apply crea/aggiorna l\'applicazione', function () {
         ->assertOk()->assertJsonStructure(['data' => ['application_id']]);
 });
 
+it('manifests: apply ritorna client_id e il client_secret one-time (nuovo client confidenziale)', function () {
+    $manifest = app(ManifestRegistry::class)->submit(validManifest());
+    grantAdmin('adm', ['iam:manifests.approve', 'iam:manifests.apply']);
+    $this->postJson("/api/iam/v1/manifests/{$manifest->id}/approve", [], ['X-Test-Auth' => 'adm', 'Idempotency-Key' => 'sec-a'])->assertOk();
+
+    $res = $this->postJson("/api/iam/v1/manifests/{$manifest->id}/apply", [], ['X-Test-Auth' => 'adm', 'Idempotency-Key' => 'sec-b'])->assertOk();
+
+    expect($res->json('data.client_id'))->toBe('cli_warehouse')
+        ->and($res->json('data.client_secret'))->toBeString()
+        ->and(strlen((string) $res->json('data.client_secret')))->toBe(48);
+
+    // Re-applying the same (already-secreted) confidential client does NOT rotate → no new secret returned.
+    $again = app(ManifestRegistry::class)->submit(validManifest());
+    $this->postJson("/api/iam/v1/manifests/{$again->id}/apply", [], ['X-Test-Auth' => 'adm', 'Idempotency-Key' => 'sec-c'])
+        ->assertOk()->assertJsonPath('data.client_secret', null);
+});
+
 it('manifests senza permesso è 403', function () {
     grantAdmin('adm', ['iam:manifests.read']);
     $manifest = app(ManifestRegistry::class)->submit(validManifest());

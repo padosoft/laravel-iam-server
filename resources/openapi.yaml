@@ -482,10 +482,28 @@ paths:
   /manifests/{manifest}/apply:
     post:
       tags: [Manifests]
-      summary: Applica un manifest approvato
-      parameters: [{ name: manifest, in: path, required: true, schema: { type: string } }]
+      summary: Applica un manifest approvato — crea/aggiorna l'app + il client OAuth
+      description: >
+        Applica il manifest. Per un client confidenziale creato ora, la risposta include `client_id` e il
+        `client_secret` in chiaro UNA SOLA VOLTA (mai ripetuto, mai persistito in chiaro): l'operatore deve
+        catturarlo per configurare l'app. Su un re-apply di un client già dotato di secret, `client_secret` è null.
+      parameters:
+        - { name: manifest, in: path, required: true, schema: { type: string } }
+        - $ref: "#/components/parameters/IdempotencyKey"
       responses:
-        "200": { description: OK }
+        "200":
+          description: Applicato
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      application_id: { type: string }
+                      client_id: { type: string, example: cli_warehouse }
+                      client_secret: { type: string, nullable: true, description: "one-time, solo per un nuovo client confidenziale" }
         "409": { $ref: "#/components/responses/Problem" }
   /manifests/{manifest}/rollback:
     post:
