@@ -214,3 +214,36 @@ it('revoke di un grant richiede iam:grants.manage (403)', function () {
     $g = Grant::create(['subject_type' => 'user', 'subject_id' => 'u', 'privilege_type' => 'permission', 'privilege_key' => 'p']);
     $this->postJson("/api/iam/v1/grants/{$g->id}/revoke", [], ['X-Test-Auth' => 'adm', 'Idempotency-Key' => 'rvx'])->assertStatus(403);
 });
+
+/** Vincola l'attore all'org "org_acme" (per i test di isolamento tenant). */
+function bindOrgBoundResolver(): void
+{
+    app()->bind(AdminActorResolver::class, fn (): AdminActorResolver => new class implements AdminActorResolver
+    {
+        public function resolve(Request $request): ?AdminContext
+        {
+            $id = $request->headers->get('X-Test-Auth');
+
+            return is_string($id) && $id !== '' ? new AdminContext(new SubjectRef('user', $id), 'org_acme') : null;
+        }
+    });
+}
+
+it('un admin org-bound non può revocare un grant globale/di altro tenant (404, fail-closed)', function () {
+    bindOrgBoundResolver();
+    grantAdmin('adm', ['iam:grants.manage']); // grant globale → vale anche per l'attore org-bound
+    $global = Grant::create(['subject_type' => 'user', 'subject_id' => 'u', 'privilege_type' => 'permission', 'privilege_key' => 'p']); // organization_id null
+
+    $this->postJson("/api/iam/v1/grants/{$global->id}/revoke", [], ['X-Test-Auth' => 'adm', 'Idempotency-Key' => 'ts1'])
+        ->assertStatus(404);
+    expect($global->fresh()->revoked_at)->toBeNull();
+});
+
+it('un admin org-bound non può aggiornare un utente non membro (404)', function () {
+    bindOrgBoundResolver();
+    grantAdmin('adm', ['iam:users.manage']);
+    $outsider = User::create(['email' => 'x@other.it']); // non membro di org_acme
+
+    $this->patchJson("/api/iam/v1/users/{$outsider->id}", ['name' => 'X'], ['X-Test-Auth' => 'adm', 'Idempotency-Key' => 'tu1'])
+        ->assertStatus(404);
+});

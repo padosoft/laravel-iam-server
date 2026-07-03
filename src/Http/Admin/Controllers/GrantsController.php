@@ -32,7 +32,7 @@ final class GrantsController extends AdminController
         // Idempotent: an already-revoked grant is a no-op (no second audit).
         if ($model->revoked_at === null) {
             $model->revoke($this->context($request)->actorRef());
-            $this->audit($request, 'iam.grant.revoked', 'grant', $model->id, ['source' => 'admin-console']);
+            $this->audit($request, 'iam.grant.revoked', 'grant', $model->id, ['source' => 'admin-console'], ['revoked_at' => null], ['revoked_at' => $model->revoked_at?->toIso8601String()]);
         }
 
         return $this->ok($this->summary($model->fresh() ?? $model));

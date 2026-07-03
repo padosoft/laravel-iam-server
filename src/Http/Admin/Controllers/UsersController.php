@@ -6,8 +6,10 @@ namespace Padosoft\Iam\Http\Admin\Controllers;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 use Padosoft\Iam\Domain\Authorization\Models\Grant;
 use Padosoft\Iam\Domain\Authorization\Models\Role;
 use Padosoft\Iam\Domain\Identity\Models\User;
@@ -46,13 +48,10 @@ final class UsersController extends AdminController
             });
         }
 
-        // Eager-load grants so summary() can list the subject's roles without an N+1 (filtered in summary).
-        $query->with('grants');
-
         return $this->paginate(
             $query,
             $request,
-            fn (Model $u): array => $u instanceof User ? $this->summary($u) : [],
+            fn (Model $u): array => $u instanceof User ? $this->summary($u, $org) : [],
         );
     }
 
@@ -74,12 +73,15 @@ final class UsersController extends AdminController
 
         $email = $request->input('email');
         if ($email !== null) {
-            if (!is_string($email) || filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
+            // Normalize like the login/registration path (Fortify lowercases usernames) so a collation-
+            // sensitive DB can't drift the uniqueness check / login lookup.
+            $normalized = is_string($email) ? Str::lower(trim($email)) : null;
+            if ($normalized === null || $normalized === '' || mb_strlen($normalized) > 255 || filter_var($normalized, FILTER_VALIDATE_EMAIL) === false) {
                 $errors['email'] = ['email non valida.'];
-            } elseif (User::query()->where('email', $email)->whereKeyNot($model->getKey())->exists()) {
+            } elseif (User::query()->where('email', $normalized)->whereKeyNot($model->getKey())->exists()) {
                 $errors['email'] = ['email già in uso.'];
             } else {
-                $changes['email'] = $email;
+                $changes['email'] = $normalized;
             }
         }
 
@@ -91,10 +93,15 @@ final class UsersController extends AdminController
         }
 
         $before = ['name' => $model->name, 'email' => $model->email];
-        $model->fill($changes)->save();
+        try {
+            $model->fill($changes)->save();
+        } catch (UniqueConstraintViolationException) {
+            // A concurrent write took the email between the check and the save → clean 422, not a 500.
+            throw ApiProblemException::unprocessable('Payload non valido.', ['email' => ['email già in uso.']]);
+        }
         $this->audit($request, 'iam.user.updated', 'user', $user, [], $before, $changes);
 
-        return $this->ok($this->summary($model->fresh() ?? $model));
+        return $this->ok($this->summary($model->fresh() ?? $model, $this->context($request)->organizationId));
     }
 
     public function grants(Request $request, string $user): JsonResponse
@@ -127,7 +134,9 @@ final class UsersController extends AdminController
 
     public function show(Request $request, string $user): JsonResponse
     {
-        return $this->ok($this->summary($this->find($user, $this->context($request)->organizationId)));
+        $org = $this->context($request)->organizationId;
+
+        return $this->ok($this->summary($this->find($user, $org), $org));
     }
 
     public function effectivePermissions(Request $request, string $user): JsonResponse
@@ -168,7 +177,7 @@ final class UsersController extends AdminController
 
         $this->audit($request, 'iam.user.suspended', 'user', $user, ['reason' => is_string($reason) ? $reason : null], ['status' => 'active'], ['status' => 'suspended']);
 
-        return $this->ok($this->summary($model->fresh() ?? $model));
+        return $this->ok($this->summary($model->fresh() ?? $model, $this->context($request)->organizationId));
     }
 
     public function reactivate(Request $request, string $user): JsonResponse
@@ -182,7 +191,7 @@ final class UsersController extends AdminController
 
         $this->audit($request, 'iam.user.reactivated', 'user', $user, [], ['status' => $before], ['status' => 'active']);
 
-        return $this->ok($this->summary($model->fresh() ?? $model));
+        return $this->ok($this->summary($model->fresh() ?? $model, $this->context($request)->organizationId));
     }
 
     private function find(string $user, ?string $org = null): User
@@ -205,16 +214,21 @@ final class UsersController extends AdminController
     /**
      * @return array<string, mixed>
      */
-    private function summary(User $u): array
+    private function summary(User $u, ?string $org = null): array
     {
         $createdAt = $u->getAttribute('created_at');
 
-        // Active role grants held by the user (privilege_key = role full_key). Eager-loaded in index();
-        // for single-user reads it falls back to a query. The console derives the super-admin badge from
-        // this list (holds the iam-admin role).
-        $roles = $u->relationLoaded('grants')
-            ? $u->grants->filter(fn (Grant $g): bool => $g->privilege_type === 'role' && $g->revoked_at === null)->pluck('privilege_key')->values()->all()
-            : $u->grants()->where('privilege_type', 'role')->whereNull('revoked_at')->pluck('privilege_key')->values()->all();
+        // Active role grants held by the user (privilege_key = role full_key). Honors validity/PIM via
+        // active() and is tenant-scoped exactly like effectivePermissions() — never surfaces another
+        // tenant's role grants. The console derives the super-admin badge from this list (iam-admin role).
+        $roles = Grant::query()->active()
+            ->where('subject_type', 'user')
+            ->where('subject_id', $u->id)
+            ->where('privilege_type', 'role')
+            ->when($org !== null, fn ($q) => $q->where(fn ($w) => $w->whereNull('organization_id')->orWhere('organization_id', $org)))
+            ->pluck('privilege_key')
+            ->values()
+            ->all();
 
         return [
             'id' => $u->id,
