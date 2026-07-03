@@ -83,7 +83,12 @@ return [
         'aws' => ['kms_key_id' => env('IAM_AWS_KMS_KEY_ID'), 'region' => env('AWS_DEFAULT_REGION')],
     ],
 
-    // M7 — Audit (doc 12)
+    // M7 — Audit (doc 12). ip_mode/ua_mode govern BOTH audit events and IdP sessions:
+    //   hash (default) → salted HMAC, brute-force-safe (ip_pepper mandatory in production, fail-closed);
+    //   full → the clear IP/UA, for forensics — surfaced only to sessions.read / audit.read operators.
+    //          NB: `full` is only meaningful behind a correct host-side TrustProxies config, otherwise
+    //          request->ip() is the proxy/load-balancer IP (e.g. on Laravel Cloud), not the real client;
+    //   none → not stored. Flipping the mode is NOT retroactive: rows keep their write-time representation.
     'audit' => [
         'stream' => 'organization', // organization | global
         'ip_mode' => env('IAM_AUDIT_IP_MODE', 'hash'), // full | hash | none

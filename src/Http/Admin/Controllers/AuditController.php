@@ -74,9 +74,17 @@ final class AuditController extends AdminController
         ];
     }
 
-    /** Surface a stored IP/UA only in `full` mode (clear value); in `hash`/`none` mode return null. */
+    /**
+     * Surface a stored IP/UA only in `full` mode (clear value); in `hash`/`none` mode return null.
+     * Guards the write-time/read-time mode-flip hazard: a value written under `hash` is a 64-hex digest,
+     * so never surface that as a clear ip/user_agent even if the mode was later flipped to `full`.
+     */
     private function readable(mixed $value, string $modeKey): ?string
     {
-        return config('iam.audit.'.$modeKey, 'hash') === 'full' && is_string($value) ? $value : null;
+        if (config('iam.audit.'.$modeKey, 'hash') !== 'full' || !is_string($value)) {
+            return null;
+        }
+
+        return preg_match('/^[0-9a-f]{64}$/i', $value) === 1 ? null : $value;
     }
 }

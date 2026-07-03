@@ -151,6 +151,19 @@ it('sessions: in modalità hash (default) NON espone ip/user_agent', function ()
         ->and($res->json('data.user_agent'))->toBeNull();
 });
 
+it('sessions: un hash scritto in modalità hash NON viene mostrato come ip dopo un flip a full', function () {
+    grantAdmin('adm', ['iam:sessions.read']);
+    // Row written under hash mode: the columns hold 64-hex digests.
+    $s = makeSession(['ip_hash' => str_repeat('a', 64), 'user_agent_hash' => str_repeat('b', 64)]);
+    // Operator later flips the mode to full — the digest must NOT surface as a clear ip/user_agent.
+    config(['iam.audit.ip_mode' => 'full', 'iam.audit.ua_mode' => 'full']);
+
+    $res = $this->getJson("/api/iam/v1/sessions/{$s->id}", ['X-Test-Auth' => 'adm'])->assertOk();
+
+    expect($res->json('data.ip'))->toBeNull()
+        ->and($res->json('data.user_agent'))->toBeNull();
+});
+
 it('sessions/revoke-all revoca tutte le sessioni attive di un utente', function () {
     grantAdmin('adm', ['iam:sessions.manage']);
     makeSession(['user_id' => 'usr_z']);

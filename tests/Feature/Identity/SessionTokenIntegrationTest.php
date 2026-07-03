@@ -108,7 +108,23 @@ it('SessionStarter hasha ip/UA in modalità hash (default)', function () {
 
     $row = Session::query()->findOrFail($ref->id);
     expect($row->getAttribute('ip_hash'))->not->toBe('198.51.100.5')
-        ->and(strlen((string) $row->getAttribute('ip_hash')))->toBe(64); // sha256 hex
+        ->and(strlen((string) $row->getAttribute('ip_hash')))->toBe(64); // hmac-sha256 hex
+});
+
+it('SessionStarter non salva ip/UA in modalità none', function () {
+    config(['iam.audit.ip_mode' => 'none', 'iam.audit.ua_mode' => 'none']);
+    $user = new User;
+    $user->forceFill(['email' => 'ipnone@acme.test'])->save();
+    $store = app('session.store');
+    $store->start();
+    $request = Request::create('/login', 'POST', [], [], [], ['REMOTE_ADDR' => '198.51.100.5', 'HTTP_USER_AGENT' => 'UA-Test']);
+    $request->setLaravelSession($store);
+
+    $ref = app(SessionStarter::class)->start($user->id, $request, Aal::AAL1);
+
+    $row = Session::query()->findOrFail($ref->id);
+    expect($row->getAttribute('ip_hash'))->toBeNull()
+        ->and($row->getAttribute('user_agent_hash'))->toBeNull();
 });
 
 it('LogoutTokenIssuer emette un logout_token valido (sid + events, niente nonce)', function () {

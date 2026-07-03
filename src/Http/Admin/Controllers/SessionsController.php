@@ -9,6 +9,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Padosoft\Iam\Contracts\Identity\SessionRegistry;
 use Padosoft\Iam\Contracts\Support\SubjectRef;
+use Padosoft\Iam\Domain\Audit\Pii\PrivacyMode;
 use Padosoft\Iam\Domain\Identity\Models\Session;
 use Padosoft\Iam\Http\Admin\AdminController;
 use Padosoft\Iam\Http\Admin\Support\ApiProblemException;
@@ -109,10 +110,16 @@ final class SessionsController extends AdminController
             // device fingerprint when present, else fall back to the user-agent hash (the login flow
             // always captures a UA but only sets a fingerprint if the client sends one).
             'device_tag' => (function () use ($s): ?string {
-                $hash = $s->getAttribute('device_fingerprint_hash');
-                if (!is_string($hash)) {
-                    $hash = $s->getAttribute('user_agent_hash');
+                $value = $s->getAttribute('device_fingerprint_hash');
+                if (!is_string($value)) {
+                    $value = $s->getAttribute('user_agent_hash');
                 }
+                if (!is_string($value)) {
+                    return null;
+                }
+                // Keep the tag non-reversible even in `full` mode (where user_agent_hash holds the clear
+                // UA): if the stored value isn't already a digest, hash it before taking the prefix.
+                $hash = preg_match('/^[0-9a-f]{64}$/i', $value) === 1 ? $value : PrivacyMode::hash($value);
 
                 return is_string($hash) ? substr($hash, 0, 10) : null;
             })(),
@@ -127,9 +134,17 @@ final class SessionsController extends AdminController
         ];
     }
 
-    /** Surface a stored IP/UA only in `full` mode (clear value); in `hash`/`none` mode return null. */
+    /**
+     * Surface a stored IP/UA only in `full` mode (clear value); in `hash`/`none` mode return null.
+     * Guards the write-time/read-time mode-flip hazard: a value written under `hash` is a 64-hex digest,
+     * so never surface that as a clear ip/user_agent even if the mode was later flipped to `full`.
+     */
     private function readable(mixed $value, string $modeKey): ?string
     {
-        return config('iam.audit.'.$modeKey, 'hash') === 'full' && is_string($value) ? $value : null;
+        if (config('iam.audit.'.$modeKey, 'hash') !== 'full' || !is_string($value)) {
+            return null;
+        }
+
+        return preg_match('/^[0-9a-f]{64}$/i', $value) === 1 ? null : $value;
     }
 }
