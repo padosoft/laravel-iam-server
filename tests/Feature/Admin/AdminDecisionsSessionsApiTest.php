@@ -106,7 +106,8 @@ it('sessions: elenca e revoca una sessione (audit + idempotente)', function () {
 
 it('sessions: il summary espone last_active_at (alias), step-up, revoked_reason e un device_tag privacy-safe', function () {
     grantAdmin('adm', ['iam:sessions.read']);
-    $s = makeSession(['step_up_at' => now(), 'device_fingerprint_hash' => str_repeat('a', 64)]);
+    // No device fingerprint (the Fortify login flow sets none) → the tag falls back to the UA hash.
+    $s = makeSession(['step_up_at' => now(), 'user_agent_hash' => str_repeat('b', 64)]);
 
     $res = $this->getJson('/api/iam/v1/sessions', ['X-Test-Auth' => 'adm'])->assertOk();
 
@@ -114,8 +115,53 @@ it('sessions: il summary espone last_active_at (alias), step-up, revoked_reason 
         ->and($res->json('data.0.last_active_at'))->toBe($res->json('data.0.last_activity_at'))
         ->and($res->json('data.0.last_active_at'))->not->toBeNull()
         ->and($res->json('data.0.step_up_at'))->not->toBeNull()
-        ->and($res->json('data.0.device_tag'))->toBe('aaaaaaaaaa') // first 10 of the fingerprint hash
+        ->and($res->json('data.0.device_tag'))->toBe('bbbbbbbbbb') // first 10 of the user-agent hash
         ->and($res->json('data.0'))->toHaveKeys(['created_at', 'revoked_reason']);
+});
+
+it('sessions: device_tag preferisce il device fingerprint quando presente', function () {
+    grantAdmin('adm', ['iam:sessions.read']);
+    $s = makeSession(['device_fingerprint_hash' => str_repeat('a', 64), 'user_agent_hash' => str_repeat('b', 64)]);
+
+    $res = $this->getJson("/api/iam/v1/sessions/{$s->id}", ['X-Test-Auth' => 'adm'])->assertOk();
+
+    expect($res->json('data.device_tag'))->toBe('aaaaaaaaaa');
+});
+
+it('sessions: espone ip/user_agent in chiaro SOLO con ip_mode/ua_mode = full', function () {
+    config(['iam.audit.ip_mode' => 'full', 'iam.audit.ua_mode' => 'full']);
+    grantAdmin('adm', ['iam:sessions.read']);
+    // In full mode the *_hash columns carry the clear value (as the SessionStarter now stores them).
+    $s = makeSession(['ip_hash' => '203.0.113.7', 'user_agent_hash' => 'Mozilla/5.0 (Test)']);
+
+    $res = $this->getJson("/api/iam/v1/sessions/{$s->id}", ['X-Test-Auth' => 'adm'])->assertOk();
+
+    expect($res->json('data.ip'))->toBe('203.0.113.7')
+        ->and($res->json('data.user_agent'))->toBe('Mozilla/5.0 (Test)');
+});
+
+it('sessions: in modalità hash (default) NON espone ip/user_agent', function () {
+    config(['iam.audit.ip_mode' => 'hash', 'iam.audit.ua_mode' => 'hash']);
+    grantAdmin('adm', ['iam:sessions.read']);
+    $s = makeSession(['ip_hash' => str_repeat('a', 64), 'user_agent_hash' => str_repeat('b', 64)]);
+
+    $res = $this->getJson("/api/iam/v1/sessions/{$s->id}", ['X-Test-Auth' => 'adm'])->assertOk();
+
+    expect($res->json('data.ip'))->toBeNull()
+        ->and($res->json('data.user_agent'))->toBeNull();
+});
+
+it('sessions: un hash scritto in modalità hash NON viene mostrato come ip dopo un flip a full', function () {
+    grantAdmin('adm', ['iam:sessions.read']);
+    // Row written under hash mode: the columns hold 64-hex digests.
+    $s = makeSession(['ip_hash' => str_repeat('a', 64), 'user_agent_hash' => str_repeat('b', 64)]);
+    // Operator later flips the mode to full — the digest must NOT surface as a clear ip/user_agent.
+    config(['iam.audit.ip_mode' => 'full', 'iam.audit.ua_mode' => 'full']);
+
+    $res = $this->getJson("/api/iam/v1/sessions/{$s->id}", ['X-Test-Auth' => 'adm'])->assertOk();
+
+    expect($res->json('data.ip'))->toBeNull()
+        ->and($res->json('data.user_agent'))->toBeNull();
 });
 
 it('sessions/revoke-all revoca tutte le sessioni attive di un utente', function () {

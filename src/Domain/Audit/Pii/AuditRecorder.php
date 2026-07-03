@@ -73,42 +73,6 @@ final class AuditRecorder
     /** Applica ip_mode/ua_mode: 'hash' (HMAC col pepper) | 'full' (in chiaro) | 'none' (niente). */
     private function transform(?string $value, string $modeKey): ?string
     {
-        if ($value === null || $value === '') {
-            return null;
-        }
-
-        $mode = config('iam.audit.'.$modeKey, 'hash');
-        if ($mode === 'none') {
-            return null;
-        }
-        if ($mode === 'full') {
-            return $value;
-        }
-
-        return hash_hmac('sha256', $value, $this->ipPepper());
-    }
-
-    /**
-     * Pepper segreto per l'HMAC di ip/ua. Senza, `hash_hmac` con chiave vuota è invertibile per
-     * brute-force (gli IPv4 sono ~4 miliardi, precomputabili) → la pseudonimizzazione è inutile.
-     * In produzione è obbligatorio (fail-closed); in dev/test lo deriviamo da APP_KEY.
-     */
-    private function ipPepper(): string
-    {
-        $pepper = config('iam.audit.ip_pepper');
-        if (is_string($pepper) && $pepper !== '') {
-            return $pepper;
-        }
-
-        if (app()->environment('production')) {
-            throw new \RuntimeException('iam.audit.ip_pepper obbligatorio in produzione quando ip_mode/ua_mode=hash.');
-        }
-
-        $appKey = config('app.key');
-        if (!is_string($appKey) || $appKey === '') {
-            throw new \RuntimeException('APP_KEY assente: impossibile derivare un pepper di sviluppo per l\'audit.');
-        }
-
-        return hash('sha256', 'iam-audit-ip|'.$appKey);
+        return PrivacyMode::apply($value, $modeKey);
     }
 }

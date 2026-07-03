@@ -68,6 +68,23 @@ final class AuditController extends AdminController
             'target_id' => $e->getAttribute('target_id'),
             'organization_id' => $e->getAttribute('organization_id'),
             'occurred_at' => $e->occurred_at->toIso8601String(),
+            // Readable actor IP/UA only when iam.audit.ip_mode/ua_mode = full (forensics); null otherwise.
+            'ip' => $this->readable($e->getAttribute('ip_hash'), 'ip_mode'),
+            'user_agent' => $this->readable($e->getAttribute('user_agent_hash'), 'ua_mode'),
         ];
+    }
+
+    /**
+     * Surface a stored IP/UA only in `full` mode (clear value); in `hash`/`none` mode return null.
+     * Guards the write-time/read-time mode-flip hazard: a value written under `hash` is a 64-hex digest,
+     * so never surface that as a clear ip/user_agent even if the mode was later flipped to `full`.
+     */
+    private function readable(mixed $value, string $modeKey): ?string
+    {
+        if (config('iam.audit.'.$modeKey, 'hash') !== 'full' || !is_string($value)) {
+            return null;
+        }
+
+        return preg_match('/^[0-9a-f]{64}$/i', $value) === 1 ? null : $value;
     }
 }
