@@ -130,6 +130,7 @@ Route::get('metrics/decisions', [MetricsController::class, 'decisions'])->middle
 Route::get('metrics/grants', [MetricsController::class, 'grants'])->middleware('iam.can:iam:metrics.read');
 Route::get('metrics/audit', [MetricsController::class, 'auditMetrics'])->middleware('iam.can:iam:metrics.read');
 Route::get('metrics/users', [MetricsController::class, 'users'])->middleware('iam.can:iam:metrics.read');
+Route::get('metrics/clients', [MetricsController::class, 'clients'])->middleware('iam.can:iam:metrics.read');
 
 // Least-privilege / anomaly recommendations (doc 16 §3, doc 14 §7)
 Route::get('recommendations/least-privilege', [RecommendationsController::class, 'leastPrivilege'])->middleware('iam.can:iam:least_privilege.view');

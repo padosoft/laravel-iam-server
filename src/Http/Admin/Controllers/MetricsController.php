@@ -14,6 +14,7 @@ use Padosoft\Iam\Domain\Audit\Models\AuditEvent;
 use Padosoft\Iam\Domain\Authorization\Models\Grant;
 use Padosoft\Iam\Domain\Identity\Models\Session;
 use Padosoft\Iam\Domain\Identity\Models\User;
+use Padosoft\Iam\Domain\OAuth\Models\OauthClient;
 use Padosoft\Iam\Domain\Organizations\Models\Membership;
 use Padosoft\Iam\Http\Admin\AdminController;
 
@@ -33,6 +34,48 @@ final class MetricsController extends AdminController
 
     /** Soglia (giorni) oltre cui un grant è considerato "stale" (tie con least-privilege M9). */
     private const STALE_DAYS = 90;
+
+    /**
+     * Client-secret lifecycle alerts (doc 13 §4.1): OAuth client confidential con secret in scadenza,
+     * scaduto, o in rotazione (grace attivo). Alimenta il banner + il widget dashboard "chiavi da ruotare".
+     * Tenant-scoped; bounded (top-N).
+     */
+    public function clients(Request $request): JsonResponse
+    {
+        $org = $this->context($request)->organizationId;
+        $now = now();
+        $warnCfg = config('iam.oauth.client_secret_warn_days', 14);
+        $warnDays = is_numeric($warnCfg) ? (int) $warnCfg : 14;
+        $threshold = $now->copy()->addDays($warnDays);
+
+        $base = fn (): Builder => OauthClient::query()
+            ->whereNull('revoked_at')->where('is_confidential', true)
+            ->when($org !== null, fn (Builder $q): Builder => $q->where('organization_id', $org));
+
+        $expired = (int) $base()->whereNotNull('secret_expires_at')->where('secret_expires_at', '<=', $now)->count();
+        $expiring = (int) $base()->whereNotNull('secret_expires_at')
+            ->where('secret_expires_at', '>', $now)->where('secret_expires_at', '<=', $threshold)->count();
+        $inGrace = (int) $base()->whereNotNull('secret_previous_expires_at')->where('secret_previous_expires_at', '>', $now)->count();
+
+        // Le righe che richiedono attenzione (scadute o in scadenza), le più urgenti prima.
+        $items = $base()
+            ->whereNotNull('secret_expires_at')->where('secret_expires_at', '<=', $threshold)
+            ->orderBy('secret_expires_at')->limit(self::TOP_N)->get()
+            ->map(fn (OauthClient $c): array => [
+                'client_id' => $c->client_id,
+                'application_key' => $c->application_key,
+                'secret_expires_at' => $c->secret_expires_at?->toIso8601String(),
+                'status' => $c->secret_expires_at !== null && $c->secret_expires_at->isPast() ? 'expired' : 'expiring',
+            ])->all();
+
+        return $this->ok([
+            'expired' => $expired,
+            'expiring' => $expiring,
+            'in_grace' => $inGrace,
+            'needs_rotation' => $expired + $expiring,
+            'items' => $items,
+        ]);
+    }
 
     public function decisions(Request $request): JsonResponse
     {

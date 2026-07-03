@@ -1039,3 +1039,31 @@ paths:
         - { name: to, in: query, required: false, schema: { type: string, format: date-time } }
       responses:
         "200": { description: OK }
+  /metrics/clients:
+    get:
+      tags: [Metrics]
+      summary: Alert lifecycle client-secret (in scadenza/scaduti/in grace) — per banner e dashboard
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      expired: { type: integer }
+                      expiring: { type: integer }
+                      in_grace: { type: integer }
+                      needs_rotation: { type: integer }
+                      items:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            client_id: { type: string }
+                            application_key: { type: string }
+                            secret_expires_at: { type: string, nullable: true }
+                            status: { type: string, enum: [expiring, expired] }
