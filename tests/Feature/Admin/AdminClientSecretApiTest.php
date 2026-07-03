@@ -78,6 +78,22 @@ it('client: lo stato è "expiring"/"expired" secondo secret_expires_at', functio
         ->assertOk()->assertJsonPath('data.secret_status', 'expired');
 });
 
+it('metrics/clients: conta i secret in scadenza/scaduti e li elenca (per banner/dashboard)', function () {
+    OauthClient::register(['client_id' => 'cli_a', 'name' => 'A', 'is_confidential' => true, 'grants' => ['client_credentials']], 'sa')
+        ->forceFill(['secret_expires_at' => now()->addDays(3)])->save();   // expiring (entro 14gg)
+    OauthClient::register(['client_id' => 'cli_b', 'name' => 'B', 'is_confidential' => true, 'grants' => ['client_credentials']], 'sb')
+        ->forceFill(['secret_expires_at' => now()->subDay()])->save();     // expired
+    OauthClient::register(['client_id' => 'cli_c', 'name' => 'C', 'is_confidential' => true, 'grants' => ['client_credentials']], 'sc')
+        ->forceFill(['secret_expires_at' => now()->addDays(365)])->save(); // ok
+    grantAdmin('adm', ['iam:metrics.read']);
+
+    $res = $this->getJson('/api/iam/v1/metrics/clients', ['X-Test-Auth' => 'adm'])->assertOk();
+    expect($res->json('data.expiring'))->toBe(1)
+        ->and($res->json('data.expired'))->toBe(1)
+        ->and($res->json('data.needs_rotation'))->toBe(2)
+        ->and($res->json('data.items'))->toHaveCount(2);
+});
+
 it('client: rotate/revoke senza iam:clients.manage è 403', function () {
     submitApproveApply(validManifest());
     grantAdmin('adm', ['iam:applications.read']); // niente clients.manage
