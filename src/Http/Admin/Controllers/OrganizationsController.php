@@ -69,7 +69,18 @@ final class OrganizationsController extends AdminController
         if (is_string($status) && in_array($status, ['active', 'suspended'], true)) {
             $model->status = $status;
         }
-        $model->save();
+        // The key is a human handle; every FK (groups/memberships/grants/sessions) points at the id, so
+        // renaming it is safe internally. A duplicate key is a 409 (the DB unique arbitrates the race).
+        $key = $request->input('key');
+        if (is_string($key) && $key !== '' && $key !== $model->key) {
+            $model->key = $key;
+        }
+
+        try {
+            $model->save();
+        } catch (UniqueConstraintViolationException) {
+            throw ApiProblemException::conflict("Organizzazione con key \"{$model->key}\" già esistente.");
+        }
 
         $this->audit($request, 'iam.organization.updated', 'organization', $model->id, [], $before, $this->summary($model));
 

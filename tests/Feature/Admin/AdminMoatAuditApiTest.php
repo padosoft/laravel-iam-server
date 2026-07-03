@@ -70,6 +70,20 @@ it('audit: elenca gli eventi e verifica la hash-chain', function () {
         ->assertOk()->assertJsonPath('data.valid', true);
 });
 
+it('audit: il filtro per prefisso tipo funziona e un testo libero non fa 500 (regressione ESCAPE MySQL)', function () {
+    $rec = app(AuditRecorder::class);
+    $rec->record(['stream' => 'admin', 'event_type' => 'iam.grant.created']);
+    $rec->record(['stream' => 'admin', 'event_type' => 'iam.role.updated']);
+    grantAdmin('adm', ['iam:audit.read']);
+
+    $res = $this->getJson('/api/iam/v1/audit/events?stream=admin&type=iam.grant', ['X-Test-Auth' => 'adm'])->assertOk();
+    expect($res->json('data'))->toHaveCount(1)->and($res->json('data.0.event_type'))->toBe('iam.grant.created');
+
+    // A free-text phrase (with spaces) must yield an empty page, not a SQL syntax error.
+    $this->getJson('/api/iam/v1/audit/events?stream=admin&type='.rawurlencode('se filtro per'), ['X-Test-Auth' => 'adm'])
+        ->assertOk()->assertJsonPath('data', []);
+});
+
 it('audit: il summary espone actor_user_id (colonna Actor)', function () {
     app(AuditRecorder::class)->record([
         'stream' => 'auth', 'event_type' => 'auth.login.succeeded',
