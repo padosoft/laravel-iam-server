@@ -35,7 +35,9 @@ function opensslCnf(): string
 /** @return array{0: string, 1: array<string, mixed>} the private key PEM and its public JWK (kid=k1). */
 function pkjwtKeypair(): array
 {
-    $key = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'prime256v1', 'config' => opensslCnf()]);
+    // private_key_bits satisfies PHP 8.3's "must be at least 384 bits" guard (an empty cnf leaves it 0);
+    // it is ignored for EC keygen, where curve_name drives the key.
+    $key = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'prime256v1', 'private_key_bits' => 2048, 'config' => opensslCnf()]);
     openssl_pkey_export($key, $privatePem, null, ['config' => opensslCnf()]);
     $d = openssl_pkey_get_details($key);
     $b64u = static fn (string $b): string => rtrim(strtr(base64_encode($b), '+/', '-_'), '=');
