@@ -191,7 +191,10 @@ curl -X POST https://iam.example.com/api/iam/v1/decisions/check \
 | --- | --- |
 | [laravel-iam-contracts](https://github.com/padosoft/laravel-iam-contracts) | Shared interfaces & DTOs — the dependency root |
 | **laravel-iam-server** *(this repo)* | The control plane: identity, PDP, OAuth/OIDC, audit, governance, Admin API & panel |
-| [laravel-iam-client](https://github.com/padosoft/laravel-iam-client) | Client for apps consuming IAM: OIDC login, JWT/JWKS, `iam.can` middleware, Gate adapter |
+| [laravel-iam-client](https://github.com/padosoft/laravel-iam-client) | PHP/Laravel client: OIDC login, JWT/JWKS, `iam.can` middleware, Gate adapter — 3 auth modes (static token · self-managed `client_credentials` + self-fetch · `private_key_jwt`) |
+| [laravel-iam-node](https://github.com/padosoft/laravel-iam-node) | Node/TypeScript SDK: decision checks + token verify; same 3 auth modes |
+| [laravel-iam-rust](https://github.com/padosoft/laravel-iam-rust) | Rust SDK (async + blocking): decision checks + token verify; same 3 auth modes |
+| [laravel-iam-react-native](https://github.com/padosoft/laravel-iam-react-native) | React Native client + hooks (public client: PKCE, no shared secret) |
 | [laravel-iam-ai](https://github.com/padosoft/laravel-iam-ai) | Optional AI module: advisory-only governance (redaction + hallucination guard + audit) |
 | [laravel-iam-directory](https://github.com/padosoft/laravel-iam-directory) | Optional directory module: LDAP / Active Directory; SCIM in v2 |
 | [laravel-iam-bridge-spatie-permission](https://github.com/padosoft/laravel-iam-bridge-spatie-permission) | Migration bridge from spatie/laravel-permission: scan, shadow mode, decision diffing, cutover |

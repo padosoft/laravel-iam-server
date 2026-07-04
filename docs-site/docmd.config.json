@@ -67,6 +67,7 @@
         { "title": "OAuth2 clients & PKCE", "path": "/guides/oauth-clients" },
         { "title": "Application credentials & lifecycle", "path": "/guides/application-credentials" },
         { "title": "private_key_jwt (asymmetric auth)", "path": "/guides/private-key-jwt" },
+        { "title": "SDK authentication modes", "path": "/guides/sdk-authentication" },
         { "title": "OIDC login", "path": "/guides/oidc-login" },
         { "title": "Sessions & step-up", "path": "/guides/sessions-and-step-up" },
         { "title": "Access reviews", "path": "/guides/access-reviews" },

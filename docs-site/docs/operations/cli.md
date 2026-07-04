@@ -65,6 +65,23 @@ php artisan iam:reviews:close  --campaign=q3-warehouse
 php artisan iam:least-privilege:scan --org=org_123
 ```
 
+## OAuth client credentials
+
+| Command | What it does |
+|---|---|
+| `iam:rotate-due-secrets` | Rotate the secret of every confidential client that opted into `auto_rotate` and whose interval elapsed (storing the new secret encrypted for one-time self-fetch during the grace), and clear pending ciphertexts whose grace has lapsed. |
+
+See [Application credentials & lifecycle](/guides/application-credentials) and
+[private_key_jwt](/guides/private-key-jwt).
+
+## Sessions
+
+| Command | What it does |
+|---|---|
+| `iam:prune-sessions {--days=}` | Mark idle- and absolute-expired sessions as revoked (reason `idle` / `absolute_expired`), then hard-delete rows revoked beyond the retention window (`IAM_SESSION_RETENTION_DAYS`, override with `--days=`). Keeps `iam_sessions` bounded. |
+
+See [Sessions & step-up](/guides/sessions-and-step-up).
+
 ## Scheduling
 
 Wire the maintenance commands into Laravel's scheduler (see [Deployment](/operations/deployment)):
@@ -74,6 +91,8 @@ $schedule->command('iam:audit:verify')->hourly();
 $schedule->command('iam:audit:checkpoint')->daily();
 $schedule->command('iam:least-privilege:scan')->daily();
 $schedule->command('iam:reviews:remind')->dailyAt('09:00');
+$schedule->command('iam:rotate-due-secrets')->daily();   // OAuth secret auto-rotation
+$schedule->command('iam:prune-sessions')->daily();       // session expiry sweep + retention
 ```
 
 ::: callout tip "CI-friendly manifests" icon:terminal

@@ -99,7 +99,8 @@ curl -X POST https://iam.example.com/api/iam/v1/applications/warehouse/rotate-se
 
 **Scheduled expiry & alerts.** Set `IAM_OAUTH_CLIENT_SECRET_TTL` (seconds) to give new secrets a lifetime;
 `GET /api/iam/v1/applications/{app}/client` reports `secret_status` (`ok` · `expiring` · `expired` ·
-`revoked`) and `secret_expires_at`, which the console surfaces as rotation alerts. Expiry is **soft** (it
+`revoked` · `public`), the auth method (`token_endpoint_auth_method` / `uses_private_key_jwt`) and
+`secret_expires_at`, which the console surfaces as rotation alerts. Expiry is **soft** (it
 drives alerts; the secret keeps working so an un-rotated app never breaks unexpectedly) — the **grace** end
 is the only hard cut-off, and only for the *previous* secret.
 
@@ -137,7 +138,7 @@ The endpoint is **opt-in** — enable it with `IAM_OAUTH_CLIENT_SELFFETCH=true` 
 auto-rotation (off by default → 404). Auto-rotation is a **hygiene** control (bounded secret lifetime), not
 incident response: on a **suspected leak, revoke the client** (revocation kills the self-fetch too) rather
 than relying on rotation. For a shared secret you never want to rotate at all, use asymmetric
-`private_key_jwt` instead (roadmap).
+[`private_key_jwt`](/guides/private-key-jwt) instead — no shared secret to store, rotate, or leak.
 
 ## Token signing & JWKS
 

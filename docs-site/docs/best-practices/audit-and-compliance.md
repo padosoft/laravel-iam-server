@@ -49,7 +49,10 @@ stays intact and verifiable.
 - **Crypto-shred** the subject's PII key on an erasure request — the event still verifies, the data is gone.
 - **Legal hold** exempts records from shredding until released; apply it before shredding when litigation or
   a regulatory hold applies.
-- Configure IP retention with `audit.ip_mode`.
+- Configure IP/UA visibility with `IAM_AUDIT_IP_MODE` / `IAM_AUDIT_UA_MODE` — each `hash` (salted HMAC,
+  default) · `full` (readable, for forensics; needs TrustProxies) · `none`; `IAM_AUDIT_IP_PEPPER` salts the
+  hash. Authentication events (`auth.login.*`, `auth.logout`, `auth.2fa.enabled/disabled`) live in the `auth`
+  stream; verify/export streams independently.
 
 ## Produce access-review evidence
 
