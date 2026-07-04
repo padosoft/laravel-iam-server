@@ -128,6 +128,10 @@ final class ApplicationsController extends AdminController
         return [
             'client_id' => $c->client_id,
             'is_confidential' => $c->is_confidential,
+            // private_key_jwt (RFC 7523): asymmetric auth — the console hides the secret/rotation UI for these.
+            'token_endpoint_auth_method' => $c->token_endpoint_auth_method,
+            'uses_private_key_jwt' => $c->usesPrivateKeyJwt(),
+            'has_jwks' => is_array($c->jwks) && ($c->jwks['keys'] ?? null) !== null,
             'auto_rotate' => $c->auto_rotate,
             'rotate_interval_days' => $c->rotate_interval_days,
             'secret_expires_at' => $c->secret_expires_at?->toIso8601String(),
