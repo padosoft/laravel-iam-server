@@ -54,7 +54,11 @@ What each part means:
 - **`app.key`** — the immutable app slug. Permission `full_key`s become `warehouse:<key>` (so
   `stock.read` → `warehouse:stock.read`).
 - **`auth`** — asks the registry to create an OAuth client for the app. `confidential` = a server-side app
-  that can keep a secret; `redirect_uris` is where the IdP sends users back after login (step 07).
+  that can keep a secret; `redirect_uris` is where the IdP sends users back after login (step 07). Apply mints
+  a **one-time** `client_secret` (shown once, stored hashed). You can also add `auto_rotate: true` +
+  `rotate_interval_days` (zero-downtime [rotation & self-fetch](/guides/application-credentials)), or go
+  secret-less with `token_endpoint_auth_method: "private_key_jwt"` + `jwks`
+  ([asymmetric auth](/guides/private-key-jwt)).
 - **`permissions`** — declared with **short** keys (`stock.read`); the registry namespaces them under the
   app. `risk`, `resource`, `action` are metadata used by governance.
 - **`roles`** — bundle permissions by their short key.

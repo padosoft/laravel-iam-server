@@ -56,7 +56,10 @@ yet you must be able to erase personal data. The resolution is **crypto-shreddin
 - "Deletion" destroys the **key**, rendering the data unrecoverable — while the row, and therefore the
   chain, stay intact and verifiable.
 - **Legal hold** exempts records from shredding until released.
-- `ip_mode` controls whether/how client IPs are recorded.
+- **IP/UA visibility** is opt-in per deployment: `IAM_AUDIT_IP_MODE` and `IAM_AUDIT_UA_MODE` each take
+  `hash` (default — a salted one-way HMAC, privacy-preserving), `full` (clear IP/UA for forensics; needs the
+  host's TrustProxies configured, and the value is surfaced only to `sessions.read`/`audit.read`) or `none`.
+  `IAM_AUDIT_IP_PEPPER` is the secret salt for `hash` mode. Flipping the mode is not retroactive.
 
 $$
 \text{erase PII} \;=\; \text{shred key } k_{\text{scope}} \quad(\text{not delete row})
@@ -77,9 +80,17 @@ gone.
 
 ## What gets audited
 
-Decisions (with their `decisionId`), manifest approvals/applies/rollbacks, grant changes, session
-revocations, access-review certifications and access-request approvals — every state change carries an audit
-entry. That is why [governance](/guides/access-reviews) can later prove who decided what.
+Every state change carries an audit entry: decisions (with their `decisionId`), manifest
+approvals/applies/rollbacks, grant changes, session revocations, access-review certifications and
+access-request approvals — plus the **authentication** events emitted by the host IdP:
+`auth.login.succeeded` / `auth.login.failed`, `auth.logout`, `auth.stepup.failed`, and
+`auth.2fa.enabled` / `auth.2fa.disabled`. That is why [governance](/guides/access-reviews) can later prove
+who decided what.
+
+Events are written to **per-purpose streams** (each an independent hash-chain), so you can verify or export
+one concern at a time: `auth` (the sign-in/2FA events above), `admin` (grant/manifest/client changes),
+`governance` (reviews/requests), and `global`. Pass the stream to `iam:audit:verify`/`:checkpoint`/`:export`
+and to the Admin API's `GET /audit/events?stream=…` (it defaults to `global`).
 
 ::: collapsible "ADR — hash-chain + crypto-shredding instead of an immutable store"
 **Problem.** Compliance wants immutability *and* a right-to-erasure. A write-once store gives the first and

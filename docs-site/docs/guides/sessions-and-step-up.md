@@ -79,8 +79,41 @@ back below AAL2, so design sensitive flows to re-check the decision rather than 
 up once".
 :::
 
+## Session lifecycle, timeouts & retention
+
+A session is **active** while it is not revoked, not past its **idle** window, and not past its **absolute**
+ceiling. The timeouts are configurable (`iam.authentication.session.*`), env-driven on the host:
+
+| Setting | Env | Default | Meaning |
+|---|---|---|---|
+| idle timeout | `IAM_SESSION_IDLE_TIMEOUT` | `1800` (30m) | Re-auth after this much inactivity. |
+| absolute timeout | `IAM_SESSION_ABSOLUTE_TIMEOUT` | `43200` (12h) | Hard ceiling — **never extended**. |
+| step-up window | `IAM_SESSION_STEPUP_WINDOW` | `300` (5m) | How long a step-up stays satisfied. |
+| concurrent limit | `IAM_SESSION_CONCURRENT_LIMIT` | unlimited | Max concurrent sessions per subject. |
+| retention | `IAM_SESSION_RETENTION_DAYS` | `90` | Days before ended/expired rows are pruned. |
+
+**States you'll see** (e.g. in the console Sessions grid): `active` · `idle` (past the idle window) ·
+`expired` (past the absolute ceiling) · `revoked` (with a reason: `logout`, `idle`, `absolute_expired`,
+`device_removed`, …).
+
+### Keeping the table bounded — `iam:prune-sessions`
+
+Expiry is evaluated on each request, so a session that idles out is rejected the moment its owner returns —
+but a session no one comes back to would otherwise sit in `iam_sessions` forever with `revoked_at = null`.
+Schedule the prune command **daily**:
+
+```php
+// routes/console.php (host)
+Schedule::command('iam:prune-sessions')->daily();
+```
+
+It runs two steps: (1) an **expiry sweep** — marks idle- and absolute-expired sessions as revoked with the
+reason (`idle` / `absolute_expired`), so the store reflects reality; (2) **retention** — hard-deletes rows
+revoked longer than `IAM_SESSION_RETENTION_DAYS`. Override the window per run with `--days=`.
+
 ## Next
 
 - [Assurance levels (AAL)](/concepts/assurance-aal) — NIST 800-63B, formally.
 - [Ask the PDP](/guides/ask-the-pdp) — the `requiresStepUp` path in context.
 - [OIDC login](/guides/oidc-login) — where the initial AAL is recorded.
+- [CLI reference](/operations/cli) — `iam:prune-sessions` and the other commands.

@@ -49,6 +49,13 @@ call site. Clear the config cache:
 php artisan config:clear
 ```
 
+::: callout tip "Remote topology: how the client authenticates" icon:key-round
+In `mode=http` (server extracted to its own host) the client sends a bearer to the PDP. Choose an
+[SDK authentication mode](/guides/sdk-authentication): a static token, self-managed `client_credentials`
+(auto-follows secret rotation), or `private_key_jwt` (no shared secret). The Node and Rust SDKs use the same
+three modes.
+:::
+
 ## 2. Check a decision from code — the `Iam` facade
 
 The quickest way to ask IAM from application code is the facade. Smoke-test it in tinker:

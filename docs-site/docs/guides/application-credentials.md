@@ -140,8 +140,11 @@ Requires `iam:clients.manage`. In the console: **Details → OAuth client → Re
 | refresh_token | 14 days | `iam.tokens.refresh_ttl` |
 | authorization code | 10 min | `iam.oauth.auth_code_ttl` |
 
-## 8. Roadmap — `private_key_jwt`
+## 8. No secret at all — `private_key_jwt`
 
-For a shared secret you never want to manage at all, asymmetric `private_key_jwt` (RFC 7523) lets the app
-sign a client assertion with its **private key** while IAM verifies with the **registered public key** — no
-shared secret to issue, rotate, or leak. Planned as an opt-in `token_endpoint_auth_method`.
+For a shared secret you never want to manage, asymmetric **`private_key_jwt` (RFC 7523) is shipped**: the app
+signs a client assertion with its **private key** while IAM verifies it against the **registered public key**
+(JWKS) — no shared secret to issue, rotate, or leak. Enabled per client via `auth.token_endpoint_auth_method
+= "private_key_jwt"` in the manifest; assertion lifetime is bounded by `IAM_OAUTH_CLIENT_ASSERTION_MAX_LIFETIME`
+(seconds, default 300) and each `jti` is single-use. Full guide:
+[private_key_jwt](/guides/private-key-jwt).

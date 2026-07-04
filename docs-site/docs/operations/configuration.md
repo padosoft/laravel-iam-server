@@ -116,18 +116,61 @@ Deterministic recommender thresholds:
 ],
 ```
 
-## Key environment variables
+## Environment variable reference
 
-| Variable | Purpose |
-|---|---|
-| `IAM_RUN_MIGRATIONS` | Auto-load package migrations |
-| `IAM_OAUTH_ENCRYPTION_KEY` | base64 32-byte key for auth codes / refresh tokens |
-| `IAM_ADMIN_AUDIENCE` | Expected `aud` of admin tokens (fail-closed) |
-| `IAM_DIRECTORY_ENABLED` | Enable directory sync/test triggers |
+Every `IAM_*` variable the server reads, grouped by area. Durations are in **seconds** unless the name ends
+in `_DAYS`. Anything omitted falls back to the safe default shown. (The deployable host —
+[`laravel-iam-console`](https://github.com/padosoft/laravel-iam-console) — ships a fully-commented
+`.env.example` with these plus a few host-only vars such as `IAM_CONSOLE_2FA`.)
+
+### Core / crypto
+| Variable | Default | Purpose |
+|---|---|---|
+| `IAM_RUN_MIGRATIONS` | `true` | Auto-load the package migrations on boot. |
+| `IAM_KMS_DRIVER` | `local` | Signing-key backend: `local` (ES256 keys auto-generated in `iam_signing_keys`) or a KMS. |
+| `IAM_KEK` | — | Base64 key-encryption key for envelope encryption / crypto-shredding. Set in prod. |
+| `IAM_OAUTH_ENCRYPTION_KEY` | derived from `APP_KEY` | Base64 32-byte key for auth codes / refresh tokens. Set explicitly in prod. |
+| `IAM_ADMIN_AUDIENCE` | — | Expected `aud` of admin tokens (fail-closed). |
+| `IAM_OPENSSL_CONF` | — | Path to an openssl config, only needed where EC keygen can't find one (some Windows hosts). |
+
+### Server-side sessions (`iam.authentication.session.*`)
+| Variable | Default | Purpose |
+|---|---|---|
+| `IAM_SESSION_IDLE_TIMEOUT` | `1800` (30m) | Re-auth after this much inactivity. |
+| `IAM_SESSION_ABSOLUTE_TIMEOUT` | `43200` (12h) | Hard session ceiling — never extended. |
+| `IAM_SESSION_STEPUP_WINDOW` | `300` (5m) | How long a step-up (2FA) stays satisfied. |
+| `IAM_SESSION_CONCURRENT_LIMIT` | — (unlimited) | Max concurrent sessions per subject. |
+| `IAM_SESSION_RETENTION_DAYS` | `90` | `iam:prune-sessions` deletes ended/expired rows older than this (**days**). |
+
+### OAuth client credentials (`iam.oauth.*`)
+| Variable | Default | Purpose |
+|---|---|---|
+| `IAM_OAUTH_CLIENT_SECRET_TTL` | — (never) | Scheduled soft-expiry of a new/rotated client secret; drives alerts only. |
+| `IAM_OAUTH_CLIENT_SECRET_GRACE` | `259200` (72h) | Window the **previous** secret stays valid after a rotation (zero-downtime rollover). |
+| `IAM_OAUTH_CLIENT_SECRET_WARN_DAYS` | `14` | "Expiring soon" alert threshold (**days**). |
+| `IAM_OAUTH_CLIENT_SELFFETCH` | `false` | Enable `POST /oauth/client-secret` so an auto-rotating app self-fetches its new secret during the grace. |
+| `IAM_OAUTH_CLIENT_ASSERTION_MAX_LIFETIME` | `300` | **private_key_jwt**: reject an assertion whose lifetime (exp−iat) exceeds this; `jti` is single-use. |
+
+### Audit (`iam.audit.*`)
+| Variable | Default | Purpose |
+|---|---|---|
+| `IAM_AUDIT_IP_MODE` | `hash` | `hash` (salted HMAC) \| `full` (readable IP for forensics; needs TrustProxies) \| `none`. |
+| `IAM_AUDIT_UA_MODE` | `hash` | Same value set for the user-agent. |
+| `IAM_AUDIT_IP_PEPPER` | — | Secret pepper for IP/UA hashing. Set in prod. |
+| `IAM_AUDIT_SINK` | — | Optional external SIEM sink. |
+
+### AI governance (`iam.ai.*`) & observability
+| Variable | Default | Purpose |
+|---|---|---|
+| `IAM_AI_ENABLED` | `false` | Advisory-only AI governance (redaction + hallucination-guard). |
+| `IAM_AI_PROVIDER` / `IAM_AI_MODEL` / `IAM_AI_BASE_URL` / `IAM_AI_API_KEY` | — | Provider wiring when AI is enabled. |
+| `IAM_DIRECTORY_ENABLED` | `false` | Enable directory (LDAP/AD) sync/test triggers. |
+| `IAM_OTEL_ENDPOINT` / `IAM_OTEL_SERVICE_NAME` | — | OpenTelemetry export (when `iam.observability.tracer` = `otlp`/`stack`). |
 
 ::: callout warning "Set secrets explicitly in production" icon:key-round
 Deriving the OAuth encryption key from `APP_KEY` is a dev convenience. In production set
-`IAM_OAUTH_ENCRYPTION_KEY` and `IAM_ADMIN_AUDIENCE` explicitly, and back the crypto layer with a real KMS.
+`IAM_OAUTH_ENCRYPTION_KEY`, `IAM_ADMIN_AUDIENCE`, `IAM_KEK` and `IAM_AUDIT_IP_PEPPER` explicitly, and back
+the crypto layer with a real KMS.
 :::
 
 ## Next
