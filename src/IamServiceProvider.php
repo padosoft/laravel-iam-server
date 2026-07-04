@@ -36,6 +36,8 @@ use Padosoft\Iam\Domain\Identity\Assurance\NativeStepUpProvider;
 use Padosoft\Iam\Domain\Identity\Assurance\UnconfiguredFactorVerifier;
 use Padosoft\Iam\Domain\Identity\Session\NativeSessionRegistry;
 use Padosoft\Iam\Domain\OAuth\AuthorizationServerFactory;
+use Padosoft\Iam\Domain\OAuth\ClientAssertionContext;
+use Padosoft\Iam\Domain\OAuth\ClientAssertionVerifier;
 use Padosoft\Iam\Domain\OAuth\Oidc\OidcContext;
 use Padosoft\Iam\Domain\OAuth\RefreshTokenCrypto;
 use Padosoft\Iam\Domain\OAuth\Repositories\AccessTokenRepository;
@@ -165,6 +167,14 @@ final class IamServiceProvider extends PackageServiceProvider
         // OidcContext: trasporta nonce/auth_time nella richiesta; singleton condiviso tra
         // AuthorizeController, ScopeRepository, AuthCodeRepository e la response type.
         $this->app->singleton(OidcContext::class);
+
+        // private_key_jwt (RFC 7523): the assertion context is a singleton reset per token request (shared by
+        // TokenController and the singleton ClientRepository); the verifier does the crypto against the cache.
+        $this->app->singleton(ClientAssertionContext::class);
+        $this->app->singleton(ClientAssertionVerifier::class, fn (): ClientAssertionVerifier => new ClientAssertionVerifier(
+            $this->app->make('cache')->store(),
+            is_numeric($max = config('iam.oauth.client_assertion_max_lifetime')) ? (int) $max : 300,
+        ));
         // RefreshTokenCrypto: decifra i refresh token opachi (revocation) con la encryptionKey league.
         $this->app->singleton(RefreshTokenCrypto::class, fn (): RefreshTokenCrypto => new RefreshTokenCrypto($this->resolveOauthEncryptionKey()));
         $this->app->singleton(AuthorizationServer::class, fn (): AuthorizationServer => (new AuthorizationServerFactory(

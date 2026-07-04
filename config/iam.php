@@ -56,6 +56,9 @@ return [
         // auto-rotazione ritira il nuovo secret durante il grace autenticandosi col proprio. OPT-IN
         // (secure-by-default): off → 404; accendilo solo dove usi l'auto-rotazione. Il pickup è one-time.
         'client_selffetch' => env('IAM_OAUTH_CLIENT_SELFFETCH', false),
+        // private_key_jwt (RFC 7523): scarta un client_assertion la cui vita (exp − iat) supera questo (secondi).
+        // Limita la finestra utile di un'assertion rubata. Il jti resta single-use fino a exp (anti-replay).
+        'client_assertion_max_lifetime' => (int) env('IAM_OAUTH_CLIENT_ASSERTION_MAX_LIFETIME', 300),
         'require_pkce' => true,         // PKCE S256 obbligatorio per i client public (doc 13 §9)
         'grants' => [
             'client_credentials' => true,

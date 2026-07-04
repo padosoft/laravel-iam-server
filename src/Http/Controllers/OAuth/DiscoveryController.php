@@ -45,7 +45,8 @@ final class DiscoveryController
             'grant_types_supported' => $this->grantTypesSupported(),
             'subject_types_supported' => ['public'],
             'id_token_signing_alg_values_supported' => ['ES256'],
-            'token_endpoint_auth_methods_supported' => ['client_secret_post', 'client_secret_basic', 'none'],
+            'token_endpoint_auth_methods_supported' => ['client_secret_post', 'client_secret_basic', 'private_key_jwt', 'none'],
+            'token_endpoint_auth_signing_alg_values_supported' => ['ES256'],
             'code_challenge_methods_supported' => ['S256'],
         ];
     }
