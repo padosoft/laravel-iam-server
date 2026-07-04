@@ -129,6 +129,8 @@ final class SessionsController extends AdminController
             'user_agent' => $this->readable($s->getAttribute('user_agent_hash'), 'ua_mode'),
             'created_at' => $s->created_at?->toIso8601String(),
             'absolute_expires_at' => $s->absolute_expires_at->toIso8601String(),
+            // Idle window (seconds): the console computes idle expiry as last_activity_at + idle_timeout.
+            'idle_timeout' => $s->idle_timeout,
             'revoked_at' => $s->revoked_at?->toIso8601String(),
             'revoked_reason' => $s->revoked_reason,
         ];

@@ -23,10 +23,13 @@ return [
         'lockout' => ['max_attempts' => 5, 'decay_seconds' => 900, 'step_up_after' => 3],
         'passkeys' => ['enabled' => true, 'rp_name' => env('IAM_RP_NAME', 'Laravel IAM')],
         'session' => [
-            'idle_timeout' => 1800,       // 30m
-            'absolute_timeout' => 43200,  // 12h (mai esteso)
-            'step_up_window' => 300,      // 5m
-            'concurrent_limit' => null,   // null = off
+            'idle_timeout' => (int) env('IAM_SESSION_IDLE_TIMEOUT', 1800),          // secondi, 30m
+            'absolute_timeout' => (int) env('IAM_SESSION_ABSOLUTE_TIMEOUT', 43200), // secondi, 12h (mai esteso)
+            'step_up_window' => (int) env('IAM_SESSION_STEPUP_WINDOW', 300),         // secondi, 5m
+            // null/0 = nessun limite di sessioni concorrenti per subject.
+            'concurrent_limit' => is_numeric(env('IAM_SESSION_CONCURRENT_LIMIT')) ? (int) env('IAM_SESSION_CONCURRENT_LIMIT') : null,
+            // Retention (giorni) delle righe iam_sessions terminate/scadute — le pota `iam:prune-sessions`.
+            'retention_days' => (int) env('IAM_SESSION_RETENTION_DAYS', 90),
         ],
     ],
 

@@ -13,6 +13,7 @@ use Padosoft\Iam\Console\Commands\LeastPrivilegeScanCommand;
 use Padosoft\Iam\Console\Commands\ManifestApplyCommand;
 use Padosoft\Iam\Console\Commands\ManifestRollbackCommand;
 use Padosoft\Iam\Console\Commands\ManifestValidateCommand;
+use Padosoft\Iam\Console\Commands\PruneSessionsCommand;
 use Padosoft\Iam\Console\Commands\ReviewsCloseCommand;
 use Padosoft\Iam\Console\Commands\ReviewsOpenCommand;
 use Padosoft\Iam\Console\Commands\ReviewsRemindCommand;
@@ -91,6 +92,7 @@ final class IamServiceProvider extends PackageServiceProvider
                 ReviewsRemindCommand::class,
                 LeastPrivilegeScanCommand::class,
                 RotateDueSecretsCommand::class,
+                PruneSessionsCommand::class,
             ]);
     }
 

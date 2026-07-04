@@ -102,4 +102,37 @@ final class NativeSessionRegistry implements SessionRegistry
 
         return $session->last_activity_at->copy()->addSeconds($idle)->greaterThan($now);
     }
+
+    /**
+     * Sweep non-revoked sessions and mark those that have gone idle or hit their absolute timeout as revoked,
+     * with the matching reason (`idle` / `absolute_expired`) — so the store reflects reality instead of
+     * leaving dead sessions as `revoked_at = null` forever. Returns the number of rows updated.
+     */
+    public function expireInactive(): int
+    {
+        $now = Carbon::now();
+        $count = 0;
+        Session::query()->whereNull('revoked_at')->chunkById(500, function ($sessions) use ($now, &$count): void {
+            foreach ($sessions as $session) {
+                $reason = $this->inactiveReason($session, $now);
+                if ($reason !== null) {
+                    $session->markRevoked($reason);
+                    $count++;
+                }
+            }
+        });
+
+        return $count;
+    }
+
+    /** Why an unrevoked session is no longer active, or null if it is still active. */
+    private function inactiveReason(Session $session, Carbon $now): ?string
+    {
+        if ($now->greaterThanOrEqualTo($session->absolute_expires_at)) {
+            return 'absolute_expired';
+        }
+        $idle = $session->idle_timeout > 0 ? $session->idle_timeout : 1800;
+
+        return $session->last_activity_at->copy()->addSeconds($idle)->lessThanOrEqualTo($now) ? 'idle' : null;
+    }
 }
