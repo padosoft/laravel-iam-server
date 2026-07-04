@@ -34,6 +34,8 @@ use Illuminate\Support\Str;
  * @property bool $auto_rotate
  * @property int|null $rotate_interval_days
  * @property string|null $secret_pending_encrypted
+ * @property array<string, mixed>|null $jwks
+ * @property string|null $token_endpoint_auth_method
  */
 final class OauthClient extends Model
 {
@@ -46,6 +48,7 @@ final class OauthClient extends Model
         'client_id', 'name', 'redirect_uris', 'grants', 'scopes',
         'is_confidential', 'is_first_party', 'organization_id', 'application_key',
         'auto_rotate', 'rotate_interval_days',
+        'jwks', 'token_endpoint_auth_method',
     ];
 
     /** @var array<string, mixed> Secure-by-default: third-party (consenso esplicito) salvo marcatura. */
@@ -65,7 +68,14 @@ final class OauthClient extends Model
         'secret_previous_expires_at' => 'datetime',
         'secret_rotated_at' => 'datetime',
         'auto_rotate' => 'boolean',
+        'jwks' => 'array',
     ];
+
+    /** True when this client authenticates with a signed assertion (private_key_jwt), not a shared secret. */
+    public function usesPrivateKeyJwt(): bool
+    {
+        return $this->token_endpoint_auth_method === 'private_key_jwt';
+    }
 
     /** @var list<string> Hash dei secret + il pending cifrato non vanno mai serializzati. */
     protected $hidden = ['secret', 'secret_previous', 'secret_pending_encrypted'];

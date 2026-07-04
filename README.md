@@ -59,6 +59,10 @@ ask the PDP. You get one place to see and prove every access decision.
 - **Application credential lifecycle** — IAM issues the `client_secret` at manifest apply (one-time, hashed),
   with **zero-downtime rotation** (grace window), **scheduled expiry + alerts**, opt-in **auto-rotation** with
   app **self-fetch**, and revocation. Full guide: [Application credentials & lifecycle](https://doc.laravel-iam-server.padosoft.com/guides/application-credentials).
+- **`private_key_jwt` — asymmetric client auth, NO shared secret** (RFC 7523 / OIDC §9). A client registers
+  only its **public** key (JWKS) and proves itself by signing a short-lived, audience-bound, single-use (`jti`)
+  ES256 assertion — nothing secret ever leaves the client, nothing to rotate or leak. Full guide:
+  [private_key_jwt](https://doc.laravel-iam-server.padosoft.com/guides/private-key-jwt).
 - **Tamper-evident audit** — hash-chained events (`AuditChainAppender` / `AuditChainVerifier`), SIEM export,
   webhooks/outbox, and GDPR crypto-shredding / legal-hold for PII.
 - **Identity governance (IGA)** — access-review campaigns, access-request approval flows, least-privilege

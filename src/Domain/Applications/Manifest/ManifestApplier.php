@@ -76,6 +76,12 @@ final class ManifestApplier
         $confidential = ($auth['client_type'] ?? 'confidential') === 'confidential';
         $type = is_string($app['type'] ?? null) ? $app['type'] : 'laravel';
 
+        // private_key_jwt (RFC 7523): the app authenticates with a signed assertion, so it registers its
+        // PUBLIC key set (jwks) and NO shared secret. Such a client is confidential (it authenticates).
+        $authMethod = is_string($auth['token_endpoint_auth_method'] ?? null) ? $auth['token_endpoint_auth_method'] : null;
+        $usesPkjwt = $authMethod === 'private_key_jwt';
+        $jwks = is_array($auth['jwks'] ?? null) ? $auth['jwks'] : null;
+
         $client = OauthClient::query()->firstOrNew(['client_id' => 'cli_'.$appKey]);
         $hasSecret = is_string($client->secret) && $client->secret !== '';
         $client->fill([
@@ -91,13 +97,15 @@ final class ManifestApplier
             // quindi l'opzione vive nel manifest, non in un edit diretto.
             'auto_rotate' => ($auth['auto_rotate'] ?? false) === true,
             'rotate_interval_days' => is_numeric($auth['rotate_interval_days'] ?? null) ? (int) $auth['rotate_interval_days'] : null,
+            'token_endpoint_auth_method' => $authMethod,
+            'jwks' => $usesPkjwt ? $jwks : null,
         ]);
 
         // Un client confidential ha bisogno di un secret (senza, fail-closed = inutilizzabile). Lo
         // generiamo quando manca: client NUOVO oppure transizione public→confidential di uno esistente
         // (che non aveva secret). Sui re-apply di un confidential che già ne ha uno NON si tocca
         // (la rotazione è un flusso a parte).
-        if ($confidential && !$hasSecret) {
+        if ($confidential && !$usesPkjwt && !$hasSecret) {
             $plain = Str::random(48);
             $client->secret = Hash::make($plain); // `secret` non è fillable: assegnazione diretta
             // Scadenza programmata del secret (null = non scade): guida gli alert di rotazione in console.

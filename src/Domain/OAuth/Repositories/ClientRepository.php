@@ -7,6 +7,7 @@ namespace Padosoft\Iam\Domain\OAuth\Repositories;
 use Illuminate\Support\Facades\Hash;
 use League\OAuth2\Server\Entities\ClientEntityInterface;
 use League\OAuth2\Server\Repositories\ClientRepositoryInterface;
+use Padosoft\Iam\Domain\OAuth\ClientAssertionContext;
 use Padosoft\Iam\Domain\OAuth\Entities\ClientEntity;
 use Padosoft\Iam\Domain\OAuth\Models\OauthClient;
 use Padosoft\Iam\Domain\Organizations\Models\Organization;
@@ -17,6 +18,10 @@ use Padosoft\Iam\Domain\Organizations\Models\Organization;
  */
 final class ClientRepository implements ClientRepositoryInterface
 {
+    // Nullable so the repo can still be constructed standalone (tests, non-token flows); when absent the
+    // private_key_jwt branch simply fails closed. The container injects the shared singleton in the token flow.
+    public function __construct(private readonly ?ClientAssertionContext $assertions = null) {}
+
     public function getClientEntity(string $clientIdentifier): ?ClientEntityInterface
     {
         $client = $this->find($clientIdentifier);
@@ -41,6 +46,14 @@ final class ClientRepository implements ClientRepositoryInterface
         // oltre al controllo isConfidential del grant league).
         if ($grantType === 'client_credentials' && !$client->is_confidential) {
             return false;
+        }
+
+        // private_key_jwt (RFC 7523): nessun secret condiviso — il client si è autenticato con un assertion
+        // FIRMATO, già verificato a monte (TokenController → ClientAssertionVerifier) e stampato nel context.
+        // Ci fidiamo SOLO se questa richiesta ha provato esattamente questo client_id. Il placeholder secret
+        // passato da league non viene mai controllato. Fail-closed: assertion assente/non valida → context null.
+        if ($client->usesPrivateKeyJwt()) {
+            return $this->assertions?->verifiedClientId() === $clientIdentifier;
         }
 
         // Client confidential → autenticazione via secret (hash). Mai accettare secret vuoto.
