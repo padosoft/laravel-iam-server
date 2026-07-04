@@ -103,3 +103,30 @@ it('listForSubject ritorna solo le sessioni attive', function () {
 
     expect($ids)->toContain($active->id)->not->toContain($revoked->id);
 });
+
+it('iam:prune-sessions marca le sessioni idle/scadute e pota le revocate oltre la retention', function () {
+    // Un solo utente, quattro sessioni distinte (evita lo UNIQUE su iam_users.email).
+    $subject = sessionUser();
+
+    // Attiva → deve sopravvivere intatta.
+    $active = registry()->start($subject, new SessionMeta);
+
+    // Idle-scaduta: ultima attività 2h fa (> 30m di idle).
+    $idle = registry()->start($subject, new SessionMeta);
+    Session::query()->whereKey($idle->id)->first()->forceFill(['last_activity_at' => now()->subHours(2)])->save();
+
+    // Absolute-scaduta: tetto assoluto nel passato.
+    $absolute = registry()->start($subject, new SessionMeta);
+    Session::query()->whereKey($absolute->id)->first()->forceFill(['absolute_expires_at' => now()->subMinute()])->save();
+
+    // Revocata da 120 giorni → oltre la retention 90g → eliminata.
+    $old = registry()->start($subject, new SessionMeta);
+    Session::query()->whereKey($old->id)->first()->forceFill(['revoked_at' => now()->subDays(120), 'revoked_reason' => 'logout'])->save();
+
+    test()->artisan('iam:prune-sessions')->assertExitCode(0);
+
+    expect(Session::query()->whereKey($idle->id)->value('revoked_reason'))->toBe('idle')
+        ->and(Session::query()->whereKey($absolute->id)->value('revoked_reason'))->toBe('absolute_expired')
+        ->and(Session::query()->whereKey($active->id)->value('revoked_at'))->toBeNull()
+        ->and(Session::query()->whereKey($old->id)->exists())->toBeFalse();
+});
