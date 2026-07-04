@@ -207,10 +207,6 @@ AAL, tamper-evident audit, multi-tenancy), architecture & ADRs, best practices, 
 [Admin API](https://doc.laravel-iam-server.padosoft.com/reference/admin-api) and
 [PHP API](https://doc.laravel-iam-server.padosoft.com/reference/php-api) reference.
 
-A condensed copy lives in [`docs/`](docs/): start at [`docs/index.md`](docs/index.md), then
-[Getting started](docs/getting-started.md), [Concepts](docs/concepts.md), and the subsystem guides —
-[Policy Decision Point](docs/pdp.md), [OAuth2 & OIDC](docs/oauth-oidc.md), [Audit](docs/audit.md),
-[Governance](docs/governance.md), [Admin API](docs/admin-api.md) and [Admin panel](docs/admin-panel.md).
 The full HTTP contract is in [`resources/openapi.yaml`](resources/openapi.yaml).
 
 ## Security
