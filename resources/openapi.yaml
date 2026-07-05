@@ -434,6 +434,14 @@ paths:
       responses:
         "200": { description: OK }
         "404": { $ref: "#/components/responses/Problem" }
+  /applications/{app}/catalog:
+    get:
+      tags: [Applications]
+      summary: Catalogo permessi + ruoli dell'app (include le voci DEPRECATE, con deprecated_at)
+      parameters: [{ name: app, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "404": { $ref: "#/components/responses/Problem" }
   /applications/{app}/client:
     get:
       tags: [Applications]
