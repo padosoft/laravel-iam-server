@@ -7,15 +7,18 @@ namespace Padosoft\Iam\Domain\Authorization\Models;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Support\Carbon;
 
 /**
  * Permesso del catalogo (doc 09 §9). `full_key` = app_key:key, immutabile (ADR-0019).
  *
  * @property string $id
+ * @property string $key
  * @property string $full_key
  * @property string $risk
  * @property bool $requires_step_up
  * @property string|null $relation
+ * @property Carbon|null $deprecated_at
  */
 final class Permission extends Model
 {

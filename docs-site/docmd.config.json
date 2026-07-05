@@ -62,6 +62,7 @@
       "icon": "book-open",
       "children": [
         { "title": "End-to-end onboarding (step by step)", "path": "/guides/onboarding-end-to-end" },
+        { "title": "Keeping IAM in sync (roles & permissions)", "path": "/guides/keeping-in-sync" },
         { "title": "Register an application", "path": "/guides/register-application" },
         { "title": "Ask the PDP", "path": "/guides/ask-the-pdp" },
         { "title": "ReBAC relationships", "path": "/guides/rebac-relationships" },

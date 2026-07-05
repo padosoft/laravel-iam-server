@@ -9,6 +9,8 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Padosoft\Iam\Domain\Applications\Models\Application;
 use Padosoft\Iam\Domain\Applications\Models\Manifest;
+use Padosoft\Iam\Domain\Authorization\Models\Permission;
+use Padosoft\Iam\Domain\Authorization\Models\Role;
 use Padosoft\Iam\Domain\OAuth\Models\OauthClient;
 use Padosoft\Iam\Http\Admin\AdminController;
 use Padosoft\Iam\Http\Admin\Support\ApiProblemException;
@@ -51,6 +53,34 @@ final class ApplicationsController extends AdminController
             'id' => $manifest->id, 'application_key' => $manifest->application_key,
             'version' => $manifest->version, 'status' => $manifest->status, 'payload' => $manifest->payload,
         ]);
+    }
+
+    /**
+     * The app's permission + role CATALOG (not the manifest payload): includes DEPRECATED entries — those
+     * removed from a later manifest are kept with a `deprecated_at` (history, disabled), so the console can
+     * show a "Deprecated" badge instead of silently dropping them.
+     */
+    public function catalog(Request $request, string $app): JsonResponse
+    {
+        $key = $this->find($request, $app)->key;
+
+        $permissions = [];
+        foreach (Permission::query()->where('app_key', $key)->orderBy('key')->get() as $p) {
+            $permissions[] = [
+                'key' => $p->key, 'full_key' => $p->full_key, 'risk' => $p->risk,
+                'deprecated_at' => $p->deprecated_at?->toIso8601String(),
+            ];
+        }
+
+        $roles = [];
+        foreach (Role::query()->where('app_key', $key)->orderBy('key')->get() as $r) {
+            $roles[] = [
+                'key' => $r->key, 'full_key' => $r->full_key, 'label' => $r->label,
+                'deprecated_at' => $r->deprecated_at?->toIso8601String(),
+            ];
+        }
+
+        return $this->ok(['permissions' => $permissions, 'roles' => $roles]);
     }
 
     /** Credential status of the app's OAuth client (client_id, secret expiry, grace, rotation). */
