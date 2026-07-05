@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://doc.laravel-iam-server.padosoft.com/manifest.schema.json",
+  "title": "Laravel IAM application manifest (v2)",
+  "description": "The declarative contract an application submits to IAM: its identity, OAuth client, permission catalog and roles. Validated server-side on submit; published here so any language can validate locally before pushing. Mirrors Padosoft\\Iam\\Domain\\Applications\\Manifest\\ManifestValidator.",
+  "type": "object",
+  "required": ["schema", "app"],
+  "additionalProperties": true,
+  "properties": {
+    "schema": { "const": "laravel-iam.manifest.v2" },
+    "app": {
+      "type": "object",
+      "required": ["key", "name"],
+      "properties": {
+        "key": { "type": "string", "pattern": "^[a-z][a-z0-9_.-]*$", "description": "URL-safe app slug; permissions/roles are namespaced under it." },
+        "name": { "type": "string", "minLength": 1 },
+        "type": { "enum": ["laravel", "spa", "mobile", "service"] },
+        "risk_level": { "enum": ["low", "medium", "high", "critical"], "default": "low" }
+      },
+      "additionalProperties": true
+    },
+    "auth": {
+      "type": "object",
+      "properties": {
+        "client_type": { "enum": ["confidential", "public"], "default": "confidential" },
+        "token_endpoint_auth_method": { "enum": ["client_secret_basic", "client_secret_post", "private_key_jwt", "none"] },
+        "redirect_uris": { "type": "array", "items": { "type": "string", "format": "uri" }, "description": "Exact absolute URIs, no wildcards." },
+        "jwks": {
+          "type": "object",
+          "description": "Public key set for private_key_jwt.",
+          "properties": { "keys": { "type": "array", "items": { "type": "object" } } }
+        },
+        "auto_rotate": { "type": "boolean", "default": false },
+        "rotate_interval_days": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": true
+    },
+    "permissions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["key"],
+        "properties": {
+          "key": { "type": "string", "pattern": "^[a-z][a-z0-9_.-]*$", "description": "Short key; IAM namespaces it as app:key." },
+          "risk": { "enum": ["low", "medium", "high", "critical"], "default": "low" },
+          "resource": { "type": "string" },
+          "action": { "type": "string" }
+        },
+        "additionalProperties": true
+      }
+    },
+    "roles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["key"],
+        "properties": {
+          "key": { "type": "string", "pattern": "^[a-z][a-z0-9_.-]*$" },
+          "label": { "type": "string" },
+          "permissions": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Each MUST reference a permission key declared in this manifest (no dangling refs)."
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  }
+}
