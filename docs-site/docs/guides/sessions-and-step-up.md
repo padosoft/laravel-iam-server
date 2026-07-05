@@ -79,6 +79,17 @@ back below AAL2, so design sensitive flows to re-check the decision rather than 
 up once".
 :::
 
+## Two kinds of 2FA — don't confuse them
+
+- **Per-action step-up (this page, the PDP):** a *permission* can demand AAL2 via `requires_step_up`; the PDP
+  returns `requiresStepUp` until the caller has stepped up. This protects *sensitive actions* in any app,
+  decided at authorization time.
+- **Mandatory console login 2FA (the host console):** a security posture for the *admin console operators*.
+  The deployable host ([`laravel-iam-console`](https://github.com/padosoft/laravel-iam-console)) offers
+  `IAM_CONSOLE_2FA=true` (operators may enrol TOTP) and `IAM_CONSOLE_2FA_REQUIRED=true` (every operator is
+  **forced** to enrol before using the console). That's login-time enforcement for the panel, separate from
+  the PDP step-up above.
+
 ## Session lifecycle, timeouts & retention
 
 A session is **active** while it is not revoked, not past its **idle** window, and not past its **absolute**

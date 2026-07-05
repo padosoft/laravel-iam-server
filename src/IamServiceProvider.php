@@ -10,6 +10,7 @@ use Padosoft\Iam\Console\Commands\AuditCheckpointCommand;
 use Padosoft\Iam\Console\Commands\AuditExportCommand;
 use Padosoft\Iam\Console\Commands\AuditVerifyCommand;
 use Padosoft\Iam\Console\Commands\LeastPrivilegeScanCommand;
+use Padosoft\Iam\Console\Commands\MakeJwkCommand;
 use Padosoft\Iam\Console\Commands\ManifestApplyCommand;
 use Padosoft\Iam\Console\Commands\ManifestRollbackCommand;
 use Padosoft\Iam\Console\Commands\ManifestValidateCommand;
@@ -93,6 +94,7 @@ final class IamServiceProvider extends PackageServiceProvider
                 LeastPrivilegeScanCommand::class,
                 RotateDueSecretsCommand::class,
                 PruneSessionsCommand::class,
+                MakeJwkCommand::class,
             ]);
     }
 

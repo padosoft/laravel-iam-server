@@ -70,6 +70,11 @@ php artisan iam:least-privilege:scan --org=org_123
 | Command | What it does |
 |---|---|
 | `iam:rotate-due-secrets` | Rotate the secret of every confidential client that opted into `auto_rotate` and whose interval elapsed (storing the new secret encrypted for one-time self-fetch during the grace), and clear pending ciphertexts whose grace has lapsed. |
+| `iam:jwk {pem} {--kid=} {--jwks}` | Convert an EC P-256 **public** key PEM into a JWK (or a full `{"keys":[…]}` set) to paste into a manifest's `auth.jwks` for **private_key_jwt** — so you never hand-compute the `x`/`y` coordinates. |
+
+```bash
+php artisan iam:jwk client-public.pem --kid=k1 --jwks
+```
 
 See [Application credentials & lifecycle](/guides/application-credentials) and
 [private_key_jwt](/guides/private-key-jwt).
