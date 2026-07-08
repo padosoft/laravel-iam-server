@@ -45,7 +45,10 @@ final class NativeAssuranceProvider implements AssuranceProvider
     {
         $stepUpAt = $model->step_up_at;
         if ($stepUpAt === null) {
-            return false;
+            // IAM-19: nessuno step-up registrato → l'AAL è il livello di autenticazione INIZIALE
+            // (es. login con passkey = AAL2), non un'elevazione: non "scade", quindi resta valido.
+            // La finestra di freschezza si applica SOLO alle elevazioni via step-up (step_up_at valorizzato).
+            return true;
         }
         $window = config('iam.authentication.session.step_up_freshness', 900);
         $window = is_numeric($window) ? (int) $window : 900;
