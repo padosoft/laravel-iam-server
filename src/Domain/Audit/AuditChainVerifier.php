@@ -13,9 +13,10 @@ use Padosoft\Iam\Domain\Audit\Models\AuditHead;
  * controlla la contiguità di `seq`. Ritorna OK oppure il PRIMO punto di rottura (manomissione di un
  * campo, hash incoerente, link spezzato o buco nella sequenza = cancellazione/riordino).
  *
- * IAM-07: l'hash-chain è un SHA-256 non-keyed e la testa (`iam_audit_heads`) vive nello stesso DB
- * scrivibile che deve proteggere — un attaccante con write può riscrivere la catena e la testa e
- * passare comunque. L'unico artefatto non forgiabile è il checkpoint firmato ES256. Perciò qui,
+ * IAM-07: l'hash-chain (SHA-256, o HMAC-SHA-256 se `iam.audit.chain_key` è configurata — IAM-12) e la
+ * testa (`iam_audit_heads`) vivono nello stesso DB scrivibile che devono proteggere — un attaccante con
+ * write potrebbe riscrivere la catena e la testa e passare comunque (se non è keyed). L'unico artefatto
+ * non forgiabile è il checkpoint firmato ES256. Perciò qui,
  * oltre alla consistenza interna, ancoriamo la verifica al checkpoint firmato più alto: ne validiamo
  * la firma (via TokenSigner/JWKS) e confrontiamo l'hash RICALCOLATO al suo `up_to_seq` con l'`head_hash`
  * firmato. Fail-closed. Un attaccante che riscrive la catura sotto il checkpoint viene smascherato dal

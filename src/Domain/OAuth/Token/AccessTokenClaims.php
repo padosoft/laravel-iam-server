@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Padosoft\Iam\Domain\OAuth\Token;
 
 use League\OAuth2\Server\Entities\ScopeEntityInterface;
+use Padosoft\Iam\Domain\Identity\Models\Session;
 use Padosoft\Iam\Domain\OAuth\Entities\AccessTokenEntity;
 use Padosoft\Iam\Domain\OAuth\Entities\ClientEntity;
 use Padosoft\Iam\Domain\OAuth\Oidc\OidcContext;
@@ -51,6 +52,15 @@ final class AccessTokenClaims
         $sid = $this->oidc->sid();
         if ($sid !== null) {
             $claims['sid'] = $sid;
+
+            // IAM-04: porta l'AAL della sessione NELL'ACCESS TOKEN. acr/amr stanno sull'id_token, ma
+            // l'enforcement server-side (Admin gate → step-up) legge l'AAL dall'access token: senza questo
+            // claim un attore che ha fatto step-up varrebbe comunque aal1 e ogni rotta requires_step_up
+            // resterebbe bloccata. Dopo uno step-up + refresh il token è ri-mintato con l'AAL aggiornato.
+            $aal = Session::query()->whereKey($sid)->value('aal');
+            if (is_string($aal) && $aal !== '') {
+                $claims['aal'] = $aal;
+            }
         }
 
         return $claims;

@@ -45,7 +45,10 @@ final class NativeStepUpProvider implements StepUpProvider
         }
 
         $expiresAt = Carbon::now()->addSeconds($this->stepUpWindow());
-        $method = $purpose->requiredAal->rank() >= Aal::AAL3->rank() ? 'passkey' : 'totp';
+        // IAM-32: il provider nativo cappa a AAL2 e verifica un fattore TOTP (Fortify); il passkey/WebAuthn
+        // (con nonce per-challenge, vedi la nota in verify()) è lavoro futuro. Quindi il metodo è 'totp' —
+        // niente più ramo `>= AAL3` morto che avrebbe comunque sempre dato 'totp' dopo il cap.
+        $method = 'totp';
 
         $challenge = StepUpChallengeModel::query()->create([
             'session_id' => $session->id,

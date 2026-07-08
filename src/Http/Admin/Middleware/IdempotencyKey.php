@@ -8,6 +8,7 @@ use Closure;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Padosoft\Iam\Http\Admin\Support\AdminContext;
@@ -70,11 +71,12 @@ final class IdempotencyKey
                 ->where('actor_ref', $actorRef)->where('idempotency_key', $key)
                 ->update([
                     'response_status' => $response->getStatusCode(),
-                    // IAM-08: never persist one-time secrets in clear. Some admin mutations (rotate-secret,
-                    // manifest apply) return a freshly minted client_secret in the body; the caller already
-                    // received the real value in the live response above — the STORED/replayed copy is
-                    // redacted so the idempotency table never becomes a recoverable cleartext credential store.
-                    'response_body' => $body === false ? null : $this->redactSecrets($body),
+                    // IAM-08: never persist a response body in clear — some admin mutations (rotate-secret,
+                    // manifest apply) return a freshly minted client_secret. We ENCRYPT the body at rest
+                    // (Crypt/APP_KEY) rather than redact it, so the idempotency table is not a recoverable
+                    // cleartext credential store, AND a legitimate retry with the same key can still recover
+                    // the exact original response (a one-time secret whose op cannot be safely re-run).
+                    'response_body' => $body === false ? null : Crypt::encryptString($body),
                     'updated_at' => now(),
                 ]);
         } else {
@@ -107,9 +109,10 @@ final class IdempotencyKey
             // rilasciamo, così i retry non restano bloccati in 409 per sempre (no deadlock idempotente).
             // IAM-41: elapsed time must be a POSITIVE magnitude. Carbon::diffInSeconds is signed, so the
             // old `now()->diffInSeconds(createdAt)` was negative for a past timestamp and the orphan release
-            // never fired (keys stranded at 409). Compare timestamps directly for an unambiguous elapsed.
+            // never fired (keys stranded at 409). Compare timestamps directly and clamp to >= 0 so a
+            // future created_at (clock skew) can't strand the key either.
             $createdAt = $row->created_at ?? null;
-            $age = is_string($createdAt) ? now()->getTimestamp() - Carbon::parse($createdAt)->getTimestamp() : 0;
+            $age = is_string($createdAt) ? max(0, now()->getTimestamp() - Carbon::parse($createdAt)->getTimestamp()) : 0;
             if ($age >= $this->inFlightTimeout()) {
                 DB::table(self::TABLE)->where('actor_ref', $actorRef)->where('idempotency_key', $key)->delete();
             }
@@ -117,7 +120,8 @@ final class IdempotencyKey
             throw ApiProblemException::conflict('Richiesta idempotente in corso: riprova.');
         }
 
-        $body = is_string($row->response_body ?? null) ? $row->response_body : '';
+        $stored = is_string($row->response_body ?? null) ? $row->response_body : '';
+        $body = $this->decryptBody($stored);
 
         return new JsonResponse(
             json_decode($body, true),
@@ -127,38 +131,19 @@ final class IdempotencyKey
     }
 
     /**
-     * IAM-08: redige i campi segreti da un body JSON prima di persisterlo (replay idempotente). I
-     * segreti one-time (client_secret, secret, access_token, refresh_token, secret_previous) non devono
-     * mai finire in chiaro nello store. Un body non-JSON viene restituito invariato (le risposte admin
-     * sono JSON; un formato ignoto non è un vettore noto di segreti).
+     * IAM-08: decifra il body salvato per il replay. Fallback plaintext per righe legacy scritte prima
+     * della cifratura at-rest (idempotency rows a vita breve; il fallback copre solo la finestra d'upgrade).
      */
-    private function redactSecrets(string $body): string
+    private function decryptBody(string $stored): string
     {
-        $decoded = json_decode($body, true);
-        if (!is_array($decoded)) {
-            return $body;
+        if ($stored === '') {
+            return '';
         }
-        $redacted = $this->redactArray($decoded);
-
-        return json_encode($redacted, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: $body;
-    }
-
-    /**
-     * @param  array<array-key, mixed>  $data
-     * @return array<array-key, mixed>
-     */
-    private function redactArray(array $data): array
-    {
-        $secretKeys = ['client_secret', 'secret', 'secret_previous', 'access_token', 'refresh_token', 'private_key', 'password'];
-        foreach ($data as $k => $v) {
-            if (is_string($k) && in_array(strtolower($k), $secretKeys, true) && $v !== null) {
-                $data[$k] = '[REDACTED]';
-            } elseif (is_array($v)) {
-                $data[$k] = $this->redactArray($v);
-            }
+        try {
+            return Crypt::decryptString($stored);
+        } catch (\Throwable) {
+            return $stored;
         }
-
-        return $data;
     }
 
     /** Secondi oltre i quali un claim senza esito è considerato orfano (default 60s). */

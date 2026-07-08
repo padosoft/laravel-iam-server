@@ -26,23 +26,25 @@ final class AuditHasher
      */
     public function hash(array $payload, string $prevHash): string
     {
-        return hash_hmac('sha256', $this->canonicalJson($payload).$prevHash, $this->key());
+        $canonical = $this->canonicalJson($payload).$prevHash;
+        $key = $this->key();
+
+        // IAM-12: HMAC keyed SOLO se è configurata una chiave DEDICATA (`iam.audit.chain_key`, fuori dalle
+        // tabelle di audit). È OPT-IN di proposito: senza chiave resta SHA-256 non-keyed, così un upgrade
+        // NON invalida le catene esistenti (nessuna migrazione forzata) e non esiste un fallback a chiave
+        // hard-coded (che vanificherebbe la proprietà keyed). Ruotare la chiave richiede un re-hash della
+        // catena esistente. La difesa forte contro un tamper con write sul DB resta il checkpoint firmato
+        // ES256 (IAM-07), sempre attivo; l'HMAC è difesa in profondità tra un checkpoint e il successivo.
+        return $key !== null
+            ? hash_hmac('sha256', $canonical, $key)
+            : hash('sha256', $canonical);
     }
 
-    /**
-     * Chiave HMAC della catena. Preferisce `iam.audit.chain_key` (dedicata, ruotabile con re-hash),
-     * altrimenti APP_KEY: entrambe vivono fuori dalle tabelle di audit, quindi mantengono la proprietà
-     * anti-ricostruzione. In produzione configurare una chiave dedicata e custodirla in un KMS/secret store.
-     */
-    private function key(): string
+    private function key(): ?string
     {
         $key = config('iam.audit.chain_key');
-        if (is_string($key) && $key !== '') {
-            return $key;
-        }
-        $appKey = config('app.key');
 
-        return is_string($appKey) && $appKey !== '' ? $appKey : 'iam-audit-chain';
+        return is_string($key) && $key !== '' ? $key : null;
     }
 
     /**

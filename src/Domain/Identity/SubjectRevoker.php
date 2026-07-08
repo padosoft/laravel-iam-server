@@ -28,12 +28,12 @@ final class SubjectRevoker
     {
         $this->sessions->revokeAllForSubject(new SubjectRef('user', $userId), $reason);
 
-        // Gli access token portano user_id; i refresh token si collegano tramite access_token_jti. Revoco
-        // prima raccogliendo i jti vivi, poi cifro entrambe le tabelle (l'ordine non crea finestre: un
-        // refresh su un access appena revocato fallisce comunque il replay-detection del RefreshTokenGrant).
+        // Gli access token portano user_id; i refresh token si collegano tramite access_token_jti. Raccogliamo
+        // TUTTI i jti dell'utente — anche di access token GIÀ revocati (es. via /oauth/revoke): il loro refresh
+        // token potrebbe essere ancora vivo e, per catene sid-less/legacy, il refresh grant potrebbe coniare
+        // nuovi token per l'utente sospeso. Poi revochiamo access (i vivi) e refresh (tutti quelli collegati).
         $jtis = OauthAccessToken::query()
             ->where('user_id', $userId)
-            ->where('revoked', false)
             ->pluck('jti')
             ->all();
 
