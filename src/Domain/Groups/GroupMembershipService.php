@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Padosoft\Iam\Contracts\Support\SubjectRef;
+use Padosoft\Iam\Domain\Authorization\Models\Relation;
 use Padosoft\Iam\Domain\Authorization\Pdp\ResourceRef;
 use Padosoft\Iam\Domain\Authorization\Relations\RelationWriter;
 use Padosoft\Iam\Domain\Groups\Models\Group;
@@ -95,5 +96,42 @@ final class GroupMembershipService
     public function membersQuery(Group $group): Builder
     {
         return GroupMember::query()->where('group_id', $group->id);
+    }
+
+    /**
+     * IAM-18: contenimento su delete del gruppo. Revocare (soft) il gruppo NON basta: le tuple ReBAC
+     * `member` (e quelle in cui il gruppo è subject: nesting, ownership) restano attive e continuano a
+     * conferire accesso a tutti i membri. Qui revochiamo OGNI tupla attiva in cui il gruppo compare come
+     * subject o come object (via RelationWriter → ogni revoca è audita) e svuotiamo il ledger dei membri,
+     * così un gruppo eliminato non concede più nulla.
+     */
+    public function revokeAllForGroup(Group $group): void
+    {
+        DB::transaction(function () use ($group): void {
+            /** @var iterable<Relation> $tuples */
+            $tuples = Relation::query()
+                ->whereNull('revoked_at')
+                ->where(fn (Builder $w) => $w
+                    ->where(fn (Builder $s) => $s->where('subject_type', 'group')->where('subject_id', $group->key))
+                    ->orWhere(fn (Builder $o) => $o->where('object_type', 'group')->where('object_id', $group->key)))
+                ->when(
+                    $group->organization_id === null,
+                    fn (Builder $q) => $q->whereNull('organization_id'),
+                    fn (Builder $q) => $q->where('organization_id', $group->organization_id),
+                )
+                ->get();
+
+            foreach ($tuples as $tuple) {
+                $this->relations->revoke(
+                    new SubjectRef($tuple->subject_type, $tuple->subject_id),
+                    $tuple->relation,
+                    new ResourceRef($tuple->object_type, $tuple->object_id),
+                    $tuple->organization_id,
+                );
+            }
+
+            // Il ledger delle membership segue le tuple: un gruppo eliminato non ha più membri.
+            GroupMember::query()->where('group_id', $group->id)->delete();
+        });
     }
 }

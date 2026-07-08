@@ -35,8 +35,11 @@ final class WebhookSender
             return;
         }
 
-        // SSRF: un URL non sicuro non diventerà sicuro ritentando → DLQ immediata (no retry).
-        if (!$this->urlGuard->isSafe($subscription->url)) {
+        // SSRF: un URL non sicuro non diventerà sicuro ritentando → DLQ immediata (no retry). IAM-15: il
+        // guard risolve l'host e valida ogni IP; ritorna l'IP validato da PINNARE così l'indirizzo dialato
+        // è quello validato (no seconda risoluzione → niente DNS-rebinding tra check e connect).
+        $target = $this->urlGuard->safeResolveTarget($subscription->url);
+        if ($target === null) {
             $delivery->forceFill([
                 'attempt' => $delivery->attempt + 1,
                 'status' => 'failed',
@@ -63,7 +66,11 @@ final class WebhookSender
                 'X-IAM-Signature' => $signatureHeader,
                 'X-IAM-Timestamp' => $timestamp,
                 'X-IAM-Event-Id' => $event->uuid, // idempotency key per il ricevente
-            ])->withBody($body, 'application/json')->post($subscription->url);
+            ])
+                // IAM-15: pin the validated IP for this host:port so curl dials exactly the address the guard
+                // validated — a DNS record flipped to an internal IP after the check cannot be reached.
+                ->withOptions(['curl' => [CURLOPT_RESOLVE => ["{$target['host']}:{$target['port']}:{$target['ip']}"]]])
+                ->withBody($body, 'application/json')->post($subscription->url);
 
             if ($response->successful()) {
                 $delivery->forceFill([

@@ -26,6 +26,14 @@ final class NativeReBacResolver
      */
     public const MAX_DEPTH = 10;
 
+    /**
+     * IAM-22: hard cap sul numero di nodi espansi per asse (breadth) — bound anti-DoS. Superata questa
+     * soglia l'espansione si ferma: per il ReBAC (che concede solo permit) un insieme più piccolo toglie
+     * permit, quindi troncare è FAIL-CLOSED (mai un permit spurio). Limita anche gli OR-term di matchAnyRef
+     * e le righe caricate dalle query list-*.
+     */
+    public const MAX_FRONTIER = 1000;
+
     public function __construct(
         private readonly RelationRewrite $rewrite = new RelationRewrite,
         private readonly ConditionEvaluator $conditions = new ConditionEvaluator,
@@ -88,6 +96,7 @@ final class NativeReBacResolver
             ->whereIn('relation', $rels)
             ->where(fn (Builder $w) => $w->whereNull('organization_id')->orWhere('organization_id', $organizationId))
             ->where(fn (Builder $w) => $this->matchAnyRef($w, 'object_type', 'object_id', array_keys($targets)))
+            ->limit(self::MAX_FRONTIER) // IAM-22: bound le righe caricate prima dell'espansione
             ->get();
 
         // Per ogni soggetto con la relazione, espandi verso i membri (se è un gruppo).
@@ -117,6 +126,7 @@ final class NativeReBacResolver
             ->whereIn('relation', $rels)
             ->where(fn (Builder $w) => $w->whereNull('organization_id')->orWhere('organization_id', $organizationId))
             ->where(fn (Builder $w) => $this->matchAnyRef($w, 'subject_type', 'subject_id', array_keys($subjects)))
+            ->limit(self::MAX_FRONTIER) // IAM-22: bound le righe caricate prima dell'espansione
             ->get();
 
         $out = [];
@@ -166,6 +176,10 @@ final class NativeReBacResolver
                 $result[$to] = [...($result[$from] ?? []), "{$from} —member→ {$to}"];
                 $next[$to] = new SubjectRef($edge->object_type, $edge->object_id);
             }
+            // IAM-22: breadth bound (fail-closed). Se l'insieme espanso supera il cap, smettiamo di crescere.
+            if (count($result) >= self::MAX_FRONTIER) {
+                break;
+            }
             $frontier = $next;
         }
 
@@ -206,6 +220,10 @@ final class NativeReBacResolver
                 $result[$to] = [...($result[$from] ?? []), "{$from} —parent→ {$to}"];
                 $next[$to] = new ResourceRef($edge->object_type, $edge->object_id);
             }
+            // IAM-22: breadth bound (fail-closed).
+            if (count($result) >= self::MAX_FRONTIER) {
+                break;
+            }
             $frontier = $next;
         }
 
@@ -240,6 +258,10 @@ final class NativeReBacResolver
                 $ref = new SubjectRef($edge->subject_type, $edge->subject_id);
                 $seen[$key] = $ref;
                 $next[$key] = $ref;
+            }
+            // IAM-22: breadth bound (fail-closed) sull'espansione verso il basso.
+            if (count($seen) >= self::MAX_FRONTIER) {
+                break;
             }
             $frontier = $next;
         }
@@ -276,6 +298,10 @@ final class NativeReBacResolver
                 $seen[$key] = $ref;
                 $next[$key] = $ref;
             }
+            // IAM-22: breadth bound (fail-closed) sull'espansione verso il basso.
+            if (count($seen) >= self::MAX_FRONTIER) {
+                break;
+            }
             $frontier = $next;
         }
 
@@ -296,6 +322,8 @@ final class NativeReBacResolver
 
             return;
         }
+        // IAM-22: bound the number of OR-terms (defense-in-depth; the frontier is already capped upstream).
+        $keys = array_slice($keys, 0, self::MAX_FRONTIER);
         foreach ($keys as $key) {
             $pos = strpos($key, ':');
             $type = $pos === false ? $key : substr($key, 0, $pos);

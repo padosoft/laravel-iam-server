@@ -25,17 +25,29 @@ final class ManifestApplier
 
     public function apply(Manifest $manifest): Application
     {
-        if ($manifest->status !== 'approved') {
-            throw new \RuntimeException("Solo un manifest 'approved' è applicabile (status attuale: {$manifest->status}).");
-        }
-
         $this->generatedSecret = null;
-        $payload = $manifest->payload;
-        $appKey = $manifest->application_key;
-        $app = $this->arr($payload['app'] ?? null);
 
-        $application = DB::transaction(function () use ($manifest, $payload, $appKey, $app): Application {
-            $application = Application::query()->firstOrNew(['key' => $appKey]);
+        $application = DB::transaction(function () use ($manifest): Application {
+            // IAM-16: lock & re-check under the lock (TOCTOU). Re-read the manifest row FOR UPDATE and
+            // verify it is STILL 'approved' inside the transaction. Two concurrent applies — or an apply
+            // racing a rollback/re-approval — must not both proceed: last-write-wins here = double apply /
+            // inconsistent catalog. Mirrors ManifestRegistry::rollback()'s locking.
+            $locked = Manifest::query()->whereKey($manifest->getKey())->lockForUpdate()->first();
+            if ($locked === null) {
+                throw new \RuntimeException('Manifest non trovato.');
+            }
+            if ($locked->status !== 'approved') {
+                throw new \RuntimeException("Solo un manifest 'approved' è applicabile (status attuale: {$locked->status}).");
+            }
+            $manifest = $locked;
+
+            $payload = $manifest->payload;
+            $appKey = $manifest->application_key;
+            $app = $this->arr($payload['app'] ?? null);
+
+            // Lock anche la riga Application (se esiste): serializza applies concorrenti sullo stesso app_key.
+            $application = Application::query()->where('key', $appKey)->lockForUpdate()->first()
+                ?? Application::query()->firstOrNew(['key' => $appKey]);
 
             // L'organizzazione di un'app esistente è immutabile: un manifest NON può trasferire
             // la proprietà cross-org (anti app-hijack). Mismatch → errore.

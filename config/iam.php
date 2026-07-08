@@ -25,7 +25,11 @@ return [
         'session' => [
             'idle_timeout' => (int) env('IAM_SESSION_IDLE_TIMEOUT', 1800),          // secondi, 30m
             'absolute_timeout' => (int) env('IAM_SESSION_ABSOLUTE_TIMEOUT', 43200), // secondi, 12h (mai esteso)
-            'step_up_window' => (int) env('IAM_SESSION_STEPUP_WINDOW', 300),         // secondi, 5m
+            'step_up_window' => (int) env('IAM_SESSION_STEPUP_WINDOW', 300),         // secondi, 5m (validità della challenge)
+            // IAM-19: freschezza dell'ELEVAZIONE step-up. Un AAL2/AAL3 ottenuto via step-up "scade" dopo
+            // questa finestra: un'azione requires_step_up esige uno step-up RECENTE, non uno vecchio di ore.
+            // Oltre la finestra la sessione torna a valere AAL1 ai fini dell'autorizzazione step-up.
+            'step_up_freshness' => (int) env('IAM_SESSION_STEPUP_FRESHNESS', 900),   // secondi, 15m
             // null/0 = nessun limite di sessioni concorrenti per subject.
             'concurrent_limit' => is_numeric(env('IAM_SESSION_CONCURRENT_LIMIT')) ? (int) env('IAM_SESSION_CONCURRENT_LIMIT') : null,
             // Retention (giorni) delle righe iam_sessions terminate/scadute — le pota `iam:prune-sessions`.

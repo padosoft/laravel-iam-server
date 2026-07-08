@@ -43,7 +43,7 @@ final class NativeSqlEngine implements AuthorizationEngine
                 allowed: false,
                 decisionId: $decisionId,
                 policyVersion: $policyVersion,
-                explanation: [...$explain, "Soggetto user:{$q->subject->id} non attivo (sospeso/disabilitato) → deny (fail-closed)."],
+                explanation: $this->explainIf($q, [...$explain, "Soggetto user:{$q->subject->id} non attivo (sospeso/disabilitato) → deny (fail-closed)."]),
             );
         }
 
@@ -79,7 +79,7 @@ final class NativeSqlEngine implements AuthorizationEngine
                 decisionId: $decisionId,
                 policyVersion: $policyVersion,
                 matched: [['type' => 'deny', 'key' => $g->privilege_key]],
-                explanation: [...$explain, "DENY esplicito da grant {$g->id} ({$g->privilege_key}) — deny-overrides."],
+                explanation: $this->explainIf($q, [...$explain, "DENY esplicito da grant {$g->id} ({$g->privilege_key}) — deny-overrides."]),
             );
         }
 
@@ -93,7 +93,7 @@ final class NativeSqlEngine implements AuthorizationEngine
                 allowed: false,
                 decisionId: $decisionId,
                 policyVersion: $policyVersion,
-                explanation: [...$explain, "Nessun permit valido per {$q->permission} → default-deny (fail-closed)."],
+                explanation: $this->explainIf($q, [...$explain, "Nessun permit valido per {$q->permission} → default-deny (fail-closed)."]),
             );
         }
 
@@ -120,8 +120,21 @@ final class NativeSqlEngine implements AuthorizationEngine
             requiresStepUp: $requiresStepUp,
             requiredAal: $requiresStepUp ? 'aal2' : null,
             matched: $matched,
-            explanation: $explain,
+            explanation: $this->explainIf($q, $explain),
         );
+    }
+
+    /**
+     * IAM-21: la spiegazione (grant id, path ReBAC, context ABAC riflesso) è dato sensibile e va esposta
+     * SOLO su richiesta esplicita (explain=true). Su /decisions/check il Decision resta snello
+     * (allow/deny + matched), così la spiegazione non finisce nella risposta né in una cache del client.
+     *
+     * @param  list<string>  $lines
+     * @return list<string>
+     */
+    private function explainIf(DecisionQuery $q, array $lines): array
+    {
+        return $q->explain ? $lines : [];
     }
 
     /**

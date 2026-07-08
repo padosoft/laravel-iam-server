@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Padosoft\Iam\Domain\Governance\Reviews;
 
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Padosoft\Iam\Domain\Audit\Pii\AuditRecorder;
@@ -34,45 +33,47 @@ final class CampaignEngine
      */
     public function open(ReviewCampaign $campaign): int
     {
-        // Apribile solo da draft (prima apertura) o running (riapertura idempotente per aggiungere
-        // grant nuovi nello scope). Una campagna completed/expired NON si riapre (fail-closed).
-        if (!in_array($campaign->status, ['draft', 'running'], true)) {
-            throw new \RuntimeException("Campagna {$campaign->id} in stato {$campaign->status}: non apribile.");
-        }
-
-        $created = 0;
-        foreach ($this->scopedGrants($campaign)->cursor() as $grant) {
-            $exists = ReviewItem::query()
-                ->where('campaign_id', $campaign->id)
-                ->where('grant_id', $grant->id)
-                ->exists();
-            if ($exists) {
-                continue;
+        // IAM-17: TOCTOU. Lock the campaign row and re-check its status UNDER the lock, mirroring cancel().
+        // The whole generation runs in the locked transaction so two concurrent open()s (or an open racing
+        // a close/cancel) cannot both pass the guard. Because the lock serialises opens, the (campaign,grant)
+        // exists-check is authoritative and the previous catch(UniqueConstraintViolation) — which would poison
+        // a Postgres transaction on the first hit — is no longer needed.
+        return DB::transaction(function () use ($campaign): int {
+            $locked = ReviewCampaign::query()->whereKey($campaign->id)->lockForUpdate()->first();
+            $state = $locked->status ?? 'inesistente';
+            // Apribile solo da draft (prima apertura) o running (riapertura idempotente). completed/expired NO.
+            if ($locked === null || !in_array($state, ['draft', 'running'], true)) {
+                throw new \RuntimeException("Campagna {$campaign->id} in stato {$state}: non apribile.");
             }
 
-            // forceFill: reviewer_subject/signals_json sono uno snapshot non mass-assignable.
-            $item = (new ReviewItem)->forceFill([
-                'campaign_id' => $campaign->id,
-                'grant_id' => $grant->id,
-                'reviewer_subject' => $this->resolveReviewer($campaign, $grant),
-                'signals_json' => $this->signals->for($grant),
-            ]);
-            try {
-                $item->save();
+            $created = 0;
+            foreach ($this->scopedGrants($locked)->cursor() as $grant) {
+                $exists = ReviewItem::query()
+                    ->where('campaign_id', $locked->id)
+                    ->where('grant_id', $grant->id)
+                    ->exists();
+                if ($exists) {
+                    continue;
+                }
+
+                // forceFill: reviewer_subject/signals_json sono uno snapshot non mass-assignable.
+                (new ReviewItem)->forceFill([
+                    'campaign_id' => $locked->id,
+                    'grant_id' => $grant->id,
+                    'reviewer_subject' => $this->resolveReviewer($locked, $grant),
+                    'signals_json' => $this->signals->for($grant),
+                ])->save();
                 $created++;
-            } catch (UniqueConstraintViolationException) {
-                // Race con un'altra apertura concorrente: l'unique (campaign_id, grant_id) ha già
-                // creato l'item → niente duplicato, niente conteggio. Idempotenza garantita dal DB.
             }
-        }
 
-        // opened_at si valorizza SOLO alla prima apertura: una riapertura non sposta la data d'inizio.
-        $campaign->forceFill([
-            'status' => 'running',
-            'opened_at' => $campaign->opened_at ?? now(),
-        ])->save();
+            // opened_at si valorizza SOLO alla prima apertura: una riapertura non sposta la data d'inizio.
+            $locked->forceFill([
+                'status' => 'running',
+                'opened_at' => $locked->opened_at ?? now(),
+            ])->save();
 
-        return $created;
+            return $created;
+        });
     }
 
     /**
@@ -117,50 +118,56 @@ final class CampaignEngine
      */
     public function close(ReviewCampaign $campaign): int
     {
-        // Chiudibile solo da running: non si chiude una draft (mai aperta) né si ri-chiude una
-        // completed (closed_at/decisioni non vanno sovrascritte → storia immutabile).
-        if ($campaign->status !== 'running') {
-            throw new \RuntimeException("Campagna {$campaign->id} in stato {$campaign->status}: non chiudibile (attesa: running).");
-        }
+        // IAM-17: TOCTOU. Lock the campaign row and re-check status UNDER the lock (mirroring cancel()), so
+        // two concurrent close()s — or a close racing a cancel — cannot both pass the guard and double-apply
+        // on_unconfirmed. The per-item locks below still protect against a reviewer deciding an item mid-close.
+        return DB::transaction(function () use ($campaign): int {
+            $locked = ReviewCampaign::query()->whereKey($campaign->id)->lockForUpdate()->first();
+            $state = $locked->status ?? 'inesistente';
+            // Chiudibile solo da running: non si chiude una draft né si ri-chiude una completed.
+            if ($locked === null || $state !== 'running') {
+                throw new \RuntimeException("Campagna {$campaign->id} in stato {$state}: non chiudibile (attesa: running).");
+            }
 
-        $action = $campaign->on_unconfirmed;
-        $processed = 0;
+            $action = $locked->on_unconfirmed;
+            $processed = 0;
 
-        /** @var Collection<int, ReviewItem> $pending */
-        $pending = $campaign->items()->where('decision', 'pending')->get();
-        foreach ($pending as $item) {
-            // Stessa garanzia di decide(): lock + ricontrollo pending, così un reviewer che decide
-            // mentre la campagna si chiude non viene sovrascritto (no doppia azione sul grant).
-            DB::transaction(function () use ($item, $action): void {
-                $locked = ReviewItem::query()->whereKey($item->id)->lockForUpdate()->first();
-                if ($locked === null || $locked->decision !== 'pending') {
-                    return;
-                }
+            /** @var Collection<int, ReviewItem> $pending */
+            $pending = $locked->items()->where('decision', 'pending')->get();
+            foreach ($pending as $item) {
+                // Stessa garanzia di decide(): lock + ricontrollo pending, così un reviewer che decide
+                // mentre la campagna si chiude non viene sovrascritto (no doppia azione sul grant).
+                DB::transaction(function () use ($item, $action): void {
+                    $lockedItem = ReviewItem::query()->whereKey($item->id)->lockForUpdate()->first();
+                    if ($lockedItem === null || $lockedItem->decision !== 'pending') {
+                        return;
+                    }
 
-                if ($action === 'keep') {
-                    $locked->forceFill([
-                        'decision' => 'approved',
-                        'decided_at' => now(),
-                        'decided_by' => 'system:access-review',
-                        'note' => 'on_unconfirmed=keep',
-                    ])->save();
-                } else {
-                    // revoke | suspend (fail-closed): qualunque azione diversa da keep rimuove l'accesso.
-                    $this->revokeGrant($locked, 'system:access-review', "on_unconfirmed={$action}");
-                    $locked->forceFill([
-                        'decision' => 'revoked',
-                        'decided_at' => now(),
-                        'decided_by' => 'system:access-review',
-                        'note' => "on_unconfirmed={$action}",
-                    ])->save();
-                }
-            });
-            $processed++;
-        }
+                    if ($action === 'keep') {
+                        $lockedItem->forceFill([
+                            'decision' => 'approved',
+                            'decided_at' => now(),
+                            'decided_by' => 'system:access-review',
+                            'note' => 'on_unconfirmed=keep',
+                        ])->save();
+                    } else {
+                        // revoke | suspend (fail-closed): qualunque azione diversa da keep rimuove l'accesso.
+                        $this->revokeGrant($lockedItem, 'system:access-review', "on_unconfirmed={$action}");
+                        $lockedItem->forceFill([
+                            'decision' => 'revoked',
+                            'decided_at' => now(),
+                            'decided_by' => 'system:access-review',
+                            'note' => "on_unconfirmed={$action}",
+                        ])->save();
+                    }
+                });
+                $processed++;
+            }
 
-        $campaign->forceFill(['status' => 'completed', 'closed_at' => now()])->save();
+            $locked->forceFill(['status' => 'completed', 'closed_at' => now()])->save();
 
-        return $processed;
+            return $processed;
+        });
     }
 
     /**
