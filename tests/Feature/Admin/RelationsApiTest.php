@@ -7,6 +7,8 @@ use Illuminate\Http\Request;
 use Padosoft\Iam\Contracts\Support\SubjectRef;
 use Padosoft\Iam\Domain\Authorization\Models\Grant;
 use Padosoft\Iam\Domain\Authorization\Models\Relation;
+use Padosoft\Iam\Domain\Authorization\Pdp\ResourceRef;
+use Padosoft\Iam\Domain\Authorization\Relations\RelationWriter;
 use Padosoft\Iam\Http\Admin\Support\AdminActorResolver;
 use Padosoft\Iam\Http\Admin\Support\AdminContext;
 
@@ -58,11 +60,19 @@ it('crea una tupla ReBAC (201) ed è idempotente sull\'identità', function () {
     expect(Relation::query()->where('subject_id', 'usr_1')->count())->toBe(1);
 });
 
+it('IAM-27: la relazione strutturale member è riservata sull\'endpoint generico (422)', function () {
+    relGrant('adm', ['iam:relations.manage']);
+    $this->postJson('/api/iam/v1/relations', [
+        'subject' => ['type' => 'user', 'id' => 'usr_9'], 'relation' => 'member', 'object' => ['type' => 'group', 'id' => 'eng'],
+    ], ['X-Test-Auth' => 'adm', 'Idempotency-Key' => 'm1'])->assertStatus(422);
+});
+
 it('list-subjects e list-resources rispondono col grafo ReBAC', function () {
     relGrant('adm', ['iam:relations.manage', 'iam:decisions.explain']);
     $auth = ['X-Test-Auth' => 'adm'];
-    // usr_2 membro di group:eng; group:eng editor di doc:99
-    $this->postJson('/api/iam/v1/relations', ['subject' => ['type' => 'user', 'id' => 'usr_2'], 'relation' => 'member', 'object' => ['type' => 'group', 'id' => 'eng']], $auth + ['Idempotency-Key' => 'a'])->assertStatus(201);
+    // usr_2 membro di group:eng; group:eng editor di doc:99. La tupla `member` è riservata sull'endpoint
+    // generico (IAM-27) → la seminiamo via il RelationWriter (setup), come farebbe il GroupMembershipService.
+    app(RelationWriter::class)->grant(new SubjectRef('user', 'usr_2'), 'member', new ResourceRef('group', 'eng'));
     $this->postJson('/api/iam/v1/relations', ['subject' => ['type' => 'group', 'id' => 'eng'], 'relation' => 'editor', 'object' => ['type' => 'doc', 'id' => '99']], $auth + ['Idempotency-Key' => 'b'])->assertStatus(201);
 
     $subjects = $this->postJson('/api/iam/v1/decisions/list-subjects', ['relation' => 'editor', 'object' => ['type' => 'doc', 'id' => '99']], $auth + ['Idempotency-Key' => 'ls'])
