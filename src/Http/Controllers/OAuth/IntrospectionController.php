@@ -8,6 +8,7 @@ use DateTimeInterface;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Padosoft\Iam\Contracts\Crypto\TokenSigner;
+use Padosoft\Iam\Contracts\Identity\SessionRegistry;
 use Padosoft\Iam\Domain\OAuth\ClientAuthenticator;
 use Padosoft\Iam\Domain\OAuth\Models\OauthAccessToken;
 
@@ -21,6 +22,7 @@ final class IntrospectionController
     public function __construct(
         private readonly ClientAuthenticator $clientAuth,
         private readonly TokenSigner $signer,
+        private readonly SessionRegistry $sessions,
     ) {}
 
     public function introspect(Request $request): JsonResponse
@@ -59,6 +61,13 @@ final class IntrospectionController
             return response()->json(['active' => false]);
         }
 
+        // IAM-10: session binding. A token carrying a `sid` whose session is no longer active is dead —
+        // revoking a session must invalidate its access tokens here too, not just at their natural expiry.
+        $sid = is_string($claims['sid'] ?? null) ? $claims['sid'] : '';
+        if ($sid !== '' && !$this->sessions->active($sid)) {
+            return response()->json(['active' => false]);
+        }
+
         return response()->json([
             'active' => true,
             'scope' => is_string($claims['scope'] ?? null) ? $claims['scope'] : '',
@@ -70,6 +79,8 @@ final class IntrospectionController
             'exp' => $this->timestamp($claims['exp'] ?? null),
             'iat' => $this->timestamp($claims['iat'] ?? null),
             'policy_version' => $claims['policy_version'] ?? null,
+            // sid esposto così un PEP/resource server può a sua volta legare l'enforcement alla sessione.
+            'sid' => $sid !== '' ? $sid : null,
         ]);
     }
 

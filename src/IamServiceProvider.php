@@ -191,6 +191,7 @@ final class IamServiceProvider extends PackageServiceProvider
             $this->app->make(RefreshTokenRepository::class),
             $this->app->make(TokenSigner::class),
             $this->app->make(OidcContext::class),
+            $this->app->make(SessionRegistry::class),
             $this->resolveOauthEncryptionKey(),
             $this->oauthConfig(),
         ))->make());

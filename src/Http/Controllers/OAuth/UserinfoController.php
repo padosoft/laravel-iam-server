@@ -7,6 +7,7 @@ namespace Padosoft\Iam\Http\Controllers\OAuth;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Padosoft\Iam\Contracts\Crypto\TokenSigner;
+use Padosoft\Iam\Contracts\Identity\SessionRegistry;
 use Padosoft\Iam\Domain\Identity\Models\User;
 use Padosoft\Iam\Domain\OAuth\Models\OauthAccessToken;
 use Padosoft\Iam\Domain\OAuth\Oidc\ClaimExtractor;
@@ -23,6 +24,7 @@ final class UserinfoController
     public function __construct(
         private readonly TokenSigner $signer,
         private readonly ClaimExtractor $claims,
+        private readonly SessionRegistry $sessions,
     ) {}
 
     public function userinfo(Request $request): JsonResponse
@@ -43,6 +45,15 @@ final class UserinfoController
         $ledger = $jti !== '' ? OauthAccessToken::query()->where('jti', $jti)->first() : null;
         if ($ledger === null || $ledger->revoked) {
             return $this->unauthorized('invalid_token', 'Token revocato o sconosciuto.');
+        }
+
+        // IAM-10: bind the token to the server-side session. If the token carries a `sid` and that session
+        // is no longer active (revoked/expired), the token is dead even before its own expiry — otherwise
+        // revoking a session would not stop issued access tokens. Tokens without a sid (e.g. machine
+        // client_credentials) are not session-bound and skip this check.
+        $sid = is_string($claims['sid'] ?? null) ? $claims['sid'] : '';
+        if ($sid !== '' && !$this->sessions->active($sid)) {
+            return $this->unauthorized('invalid_token', 'Sessione revocata o scaduta.');
         }
 
         $scopes = $this->scopes($claims);

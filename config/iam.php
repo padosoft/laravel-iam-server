@@ -114,6 +114,10 @@ return [
         'ip_mode' => env('IAM_AUDIT_IP_MODE', 'hash'), // full | hash | none
         'ip_pepper' => env('IAM_AUDIT_IP_PEPPER'),
         'ua_mode' => env('IAM_AUDIT_UA_MODE', 'hash'),
+        // IAM-12: chiave HMAC della hash-chain. Segreto FUORI dalle tabelle di audit → un attaccante con
+        // sola-write sul DB non può ricalcolare la catena. Null = fallback su APP_KEY. In prod: chiave
+        // dedicata in un KMS/secret store (ruotarla richiede un re-hash della catena esistente).
+        'chain_key' => env('IAM_AUDIT_CHAIN_KEY'),
         'export' => ['format' => 'ocsf', 'sink' => env('IAM_AUDIT_SINK')], // ELK/SIEM
     ],
 

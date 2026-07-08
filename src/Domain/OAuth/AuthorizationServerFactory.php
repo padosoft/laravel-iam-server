@@ -10,6 +10,7 @@ use League\OAuth2\Server\CryptKey;
 use League\OAuth2\Server\Grant\AuthCodeGrant;
 use League\OAuth2\Server\Grant\ClientCredentialsGrant;
 use Padosoft\Iam\Contracts\Crypto\TokenSigner;
+use Padosoft\Iam\Contracts\Identity\SessionRegistry;
 use Padosoft\Iam\Domain\OAuth\Grants\IamRefreshTokenGrant;
 use Padosoft\Iam\Domain\OAuth\Oidc\OidcContext;
 use Padosoft\Iam\Domain\OAuth\Repositories\AccessTokenRepository;
@@ -37,6 +38,7 @@ final class AuthorizationServerFactory
         private readonly RefreshTokenRepository $refreshTokens,
         private readonly TokenSigner $signer,
         private readonly OidcContext $oidc,
+        private readonly SessionRegistry $sessions,
         private readonly string $encryptionKey,
         private readonly array $config,
     ) {}
@@ -65,7 +67,7 @@ final class AuthorizationServerFactory
         }
         if (($grants['refresh_token'] ?? false) === true) {
             // Rotation (default league) + replay detection a livello di catena (RFC 9700).
-            $refresh = new IamRefreshTokenGrant($this->refreshTokens, $this->oidc);
+            $refresh = new IamRefreshTokenGrant($this->refreshTokens, $this->oidc, $this->sessions);
             $refresh->setRefreshTokenTTL($this->refreshTtl());
             $server->enableGrantType($refresh, $this->accessTtl());
         }

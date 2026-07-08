@@ -6,6 +6,7 @@ namespace Padosoft\Iam\Domain\OAuth\Grants;
 
 use League\OAuth2\Server\Exception\OAuthServerException;
 use League\OAuth2\Server\Grant\RefreshTokenGrant;
+use Padosoft\Iam\Contracts\Identity\SessionRegistry;
 use Padosoft\Iam\Domain\OAuth\Oidc\OidcContext;
 use Padosoft\Iam\Domain\OAuth\Repositories\RefreshTokenRepository;
 use Psr\Http\Message\ServerRequestInterface;
@@ -22,6 +23,7 @@ final class IamRefreshTokenGrant extends RefreshTokenGrant
     public function __construct(
         private readonly RefreshTokenRepository $iamRefreshTokens,
         private readonly OidcContext $oidc,
+        private readonly SessionRegistry $sessions,
     ) {
         parent::__construct($iamRefreshTokens);
     }
@@ -55,12 +57,27 @@ final class IamRefreshTokenGrant extends RefreshTokenGrant
             throw OAuthServerException::invalidRefreshToken('Refresh token reuse detected; token chain revoked.');
         }
 
+        // IAM-11: session binding across rotation. The chain remembers the session it was born from.
+        // If that session is no longer active (revoked/expired), the refresh is denied — revoking a
+        // session must stop its refresh family, not just its access tokens. If still active, restore
+        // sid/acr/amr onto the OidcContext so the rotated access/id tokens KEEP the sid binding (without
+        // this, refreshed tokens silently drop sid and become unrevocable by session).
+        $session = $this->iamRefreshTokens->chainSession($current);
+        $sid = $session['sid'];
+        if (is_string($sid) && $sid !== '' && !$this->sessions->active($sid)) {
+            $this->iamRefreshTokens->revokeChain($current);
+
+            throw OAuthServerException::invalidRefreshToken('Session revoked; refresh token chain revoked.');
+        }
+
         // Token valido e claimato: la prossima rotazione prosegue la stessa catena.
         $this->iamRefreshTokens->continueChain($current);
 
         // OIDC: l'id_token emesso sul refresh deve riportare l'auth_time ORIGINALE (no max_age
         // bypass) e NON un nuovo nonce (il nonce è single-use della richiesta di autenticazione).
         $this->oidc->set(null, $this->iamRefreshTokens->chainAuthTime($current));
+        // Ripristina il binding di sessione dalla catena, così l'access token ruotato conserva sid/acr/amr.
+        $this->oidc->setSession($sid, $session['acr'], $session['amr']);
 
         return $validated;
     }
