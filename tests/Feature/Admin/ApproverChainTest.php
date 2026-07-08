@@ -70,7 +70,10 @@ it('rifiuta 403 fail-closed senza permesso', function () {
 });
 
 it('AND sequenziale: il grant nasce SOLO all\'ultimo step', function () {
+    // IAM-30: gli step vanno approvati da approver DISTINTI (separazione dei compiti). Il test usa due
+    // admin diversi per i due step; l'intento (sequencing + grant solo all'ultimo step) resta invariato.
     chainGrant('adm', ['iam:access_request.review']);
+    chainGrant('adm2', ['iam:access_request.review']);
     $req = chainRequest('usr_req', 2);
     $s1 = chainStep($req, 1);
     $s2 = chainStep($req, 2);
@@ -84,10 +87,25 @@ it('AND sequenziale: il grant nasce SOLO all\'ultimo step', function () {
         ->assertOk()->assertJsonPath('data.granted', false)->assertJsonPath('data.request.status', 'pending');
     expect(Grant::query()->where('source', 'access_request')->where('subject_id', 'usr_req')->exists())->toBeFalse();
 
-    // Step 2 (finale) → grant emesso, richiesta approved.
-    $this->postJson("/api/iam/v1/access-requests/{$req->id}/steps/{$s2->id}/approve", [], ['X-Test-Auth' => 'adm', 'Idempotency-Key' => 'a2'])
+    // Step 2 (finale) da un approver DIVERSO → grant emesso, richiesta approved.
+    $this->postJson("/api/iam/v1/access-requests/{$req->id}/steps/{$s2->id}/approve", [], ['X-Test-Auth' => 'adm2', 'Idempotency-Key' => 'a2'])
         ->assertOk()->assertJsonPath('data.granted', true)->assertJsonPath('data.request.status', 'approved');
     expect(Grant::query()->where('source', 'access_request')->where('subject_id', 'usr_req')->exists())->toBeTrue();
+});
+
+it('IAM-30: lo stesso approver non può approvare due step della catena (separazione dei compiti)', function () {
+    chainGrant('adm', ['iam:access_request.review']);
+    $req = chainRequest('usr_req', 2);
+    $s1 = chainStep($req, 1);
+    $s2 = chainStep($req, 2);
+
+    $this->postJson("/api/iam/v1/access-requests/{$req->id}/steps/{$s1->id}/approve", [], ['X-Test-Auth' => 'adm', 'Idempotency-Key' => 'd1'])
+        ->assertOk()->assertJsonPath('data.granted', false);
+
+    // Stesso approver sullo step 2 → 409 (SoD), nessun grant.
+    $this->postJson("/api/iam/v1/access-requests/{$req->id}/steps/{$s2->id}/approve", [], ['X-Test-Auth' => 'adm', 'Idempotency-Key' => 'd2'])
+        ->assertStatus(409);
+    expect(Grant::query()->where('source', 'access_request')->where('subject_id', 'usr_req')->exists())->toBeFalse();
 });
 
 it('un reject su qualunque step → richiesta rejected (fail-closed, nessun grant)', function () {

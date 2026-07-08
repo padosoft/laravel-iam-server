@@ -14,7 +14,10 @@ use Padosoft\Iam\Domain\OAuth\Repositories\ClientRepository;
  */
 final class ClientAuthenticator
 {
-    public function __construct(private readonly ClientRepository $clients) {}
+    public function __construct(
+        private readonly ClientRepository $clients,
+        private readonly ClientAssertionContext $assertions,
+    ) {}
 
     /**
      * Ritorna il client_id autenticato, oppure null se l'autenticazione fallisce.
@@ -23,6 +26,13 @@ final class ClientAuthenticator
      */
     public function authenticate(Request $request): ?string
     {
+        // IAM-06: questi endpoint autenticano il client SOLO via secret — non verificano mai un
+        // client_assertion. Azzera qualsiasi client_id lasciato nel context condiviso da una richiesta
+        // precedente (sotto Octane/Swoole il singleton sopravvive tra le richieste sul worker), così un
+        // client private_key_jwt non può MAI essere autenticato qui su un valore stantìo: il ramo
+        // private_key_jwt di validateClient fa fail-closed (verifiedClientId() === null !== client_id).
+        $this->assertions->reset();
+
         [$clientId, $secret] = $this->credentials($request);
         if ($clientId === null || $secret === null || $secret === '') {
             return null;

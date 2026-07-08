@@ -13,13 +13,21 @@ use Padosoft\Iam\Domain\Audit\Models\AuditEvent;
  */
 final class EventsQuery
 {
-    public function page(string $stream, int $limit = 50, ?string $cursor = null, ?string $typePrefix = null): EventsPage
+    public function page(string $stream, int $limit = 50, ?string $cursor = null, ?string $typePrefix = null, ?string $organizationId = null): EventsPage
     {
         $limit = max(1, min($limit, 500));
 
         $builder = AuditEvent::query()
             ->where('stream', $stream)
             ->orderBy('seq');
+
+        // IAM-03: tenant isolation on shared streams. Streams like 'admin'/'governance'/'authorization'
+        // commingle every tenant's events (the tenant lives in the organization_id column). A tenant-bound
+        // caller must only ever read their own org's rows, so scope by organization_id when an org is given.
+        // A null org (global admin) reads across tenants; that path is gated by the audit.read permission.
+        if ($organizationId !== null) {
+            $builder->where('organization_id', $organizationId);
+        }
 
         if ($cursor !== null && ctype_digit($cursor)) {
             $builder->where('seq', '>', (int) $cursor);

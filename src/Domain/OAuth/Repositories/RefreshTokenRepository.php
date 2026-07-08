@@ -51,14 +51,25 @@ final class RefreshTokenRepository implements RefreshTokenRepositoryInterface
         $expiresAt = $refreshTokenEntity->getExpiryDateTime();
 
         $authTime = $this->oidc->authTime();
+        // IAM-11: fissa sulla catena la sessione d'origine (sid/acr/amr) al momento della creazione, così
+        // il refresh grant può negare il refresh a sessione revocata e riportare il binding sui token ruotati.
+        $sid = $this->oidc->sid();
+        $acr = $this->oidc->acr();
+        $amr = $this->oidc->amr();
 
-        DB::transaction(function () use ($id, $chainId, $accessJti, $expiresAt, $authTime): void {
+        DB::transaction(function () use ($id, $chainId, $accessJti, $expiresAt, $authTime, $sid, $acr, $amr): void {
             // Lock della riga catena: serializza con revokeChain. Se la catena è già compromessa
             // (replay rilevato concorrentemente) il nuovo token nasce REVOCATO → niente token figlio
             // sfuggito alla revoca, qualunque sia l'ordine delle due operazioni.
-            // Alla CREAZIONE della catena fissa l'auth_time originale (per gli id_token dei refresh).
+            // Alla CREAZIONE della catena fissa l'auth_time originale e la sessione (per i refresh).
             $chain = OauthTokenChain::query()->lockForUpdate()->find($chainId)
-                ?? OauthTokenChain::query()->create(['chain_id' => $chainId, 'auth_time' => $authTime]);
+                ?? OauthTokenChain::query()->create([
+                    'chain_id' => $chainId,
+                    'auth_time' => $authTime,
+                    'sid' => $sid,
+                    'acr' => $acr,
+                    'amr' => $amr !== [] ? $amr : null,
+                ]);
             $compromised = $chain->compromised;
 
             OauthRefreshToken::query()->create([
@@ -115,6 +126,26 @@ final class RefreshTokenRepository implements RefreshTokenRepositoryInterface
         $chain = OauthTokenChain::query()->whereKey($chainId)->first();
 
         return $chain?->auth_time?->toDateTimeImmutable();
+    }
+
+    /**
+     * IAM-11: sessione d'origine della catena (sid/acr/amr) cui appartiene il refresh token. Serve al
+     * grant per negare il refresh a sessione revocata e per riportare il binding sugli access token ruotati.
+     *
+     * @return array{sid: ?string, acr: ?string, amr: list<string>}
+     */
+    public function chainSession(string $refreshTokenId): array
+    {
+        $chainId = OauthRefreshToken::query()->where('refresh_token_id', $refreshTokenId)->value('chain_id');
+        $chain = is_string($chainId) ? OauthTokenChain::query()->whereKey($chainId)->first() : null;
+
+        $amr = $chain?->amr;
+
+        return [
+            'sid' => $chain?->sid,
+            'acr' => $chain?->acr,
+            'amr' => is_array($amr) ? array_values(array_filter($amr, 'is_string')) : [],
+        ];
     }
 
     /**

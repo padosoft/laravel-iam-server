@@ -26,6 +26,14 @@ final class NativeReBacResolver
      */
     public const MAX_DEPTH = 10;
 
+    /**
+     * IAM-22: hard cap sul numero di nodi espansi per asse (breadth) — bound anti-DoS. Superata questa
+     * soglia l'espansione si ferma: per il ReBAC (che concede solo permit) un insieme più piccolo toglie
+     * permit, quindi troncare è FAIL-CLOSED (mai un permit spurio). Limita anche gli OR-term di matchAnyRef
+     * e le righe caricate dalle query list-*.
+     */
+    public const MAX_FRONTIER = 1000;
+
     public function __construct(
         private readonly RelationRewrite $rewrite = new RelationRewrite,
         private readonly ConditionEvaluator $conditions = new ConditionEvaluator,
@@ -39,8 +47,12 @@ final class NativeReBacResolver
     public function hasRelation(SubjectRef $subject, string $relation, ResourceRef $object, array $context = [], ?string $organizationId = null, int $minToken = 0): RelationResult
     {
         $rels = $this->rewrite->satisfying($relation);
-        $subjects = $this->expandGroups($subject, $organizationId); // [key => chain]
-        $targets = $this->expandHierarchy($object, $organizationId); // [key => chain]
+        // IAM-09: pass the ABAC context into the transitive expansion so a condition on a structural
+        // (member/parent) edge is honoured at every hop, not only on the final candidate tuple.
+        // IAM-26: also propagate the consistency_token floor so a stale structural edge cannot satisfy a
+        // read-your-writes (minToken) query through an intermediate hop.
+        $subjects = $this->expandGroups($subject, $organizationId, $context, $minToken); // [key => chain]
+        $targets = $this->expandHierarchy($object, $organizationId, $context, $minToken); // [key => chain]
 
         /** @var Collection<int, Relation> $candidates */
         $candidates = Relation::query()->active()
@@ -86,6 +98,7 @@ final class NativeReBacResolver
             ->whereIn('relation', $rels)
             ->where(fn (Builder $w) => $w->whereNull('organization_id')->orWhere('organization_id', $organizationId))
             ->where(fn (Builder $w) => $this->matchAnyRef($w, 'object_type', 'object_id', array_keys($targets)))
+            ->limit(self::MAX_FRONTIER) // IAM-22: bound le righe caricate prima dell'espansione
             ->get();
 
         // Per ogni soggetto con la relazione, espandi verso i membri (se è un gruppo).
@@ -115,6 +128,7 @@ final class NativeReBacResolver
             ->whereIn('relation', $rels)
             ->where(fn (Builder $w) => $w->whereNull('organization_id')->orWhere('organization_id', $organizationId))
             ->where(fn (Builder $w) => $this->matchAnyRef($w, 'subject_type', 'subject_id', array_keys($subjects)))
+            ->limit(self::MAX_FRONTIER) // IAM-22: bound le righe caricate prima dell'espansione
             ->get();
 
         $out = [];
@@ -131,9 +145,10 @@ final class NativeReBacResolver
     /**
      * {S} ∪ gruppi di cui S è membro (transitivo, bounded). Chiave "type:id" → cammino dal soggetto.
      *
+     * @param  array<string, mixed>  $context  per valutare la condition ABAC di ogni edge `member` (IAM-09)
      * @return array<string, list<string>>
      */
-    private function expandGroups(SubjectRef $subject, ?string $organizationId): array
+    private function expandGroups(SubjectRef $subject, ?string $organizationId, array $context = [], int $minToken = 0): array
     {
         $start = $subject->type.':'.$subject->id;
         $result = [$start => []];
@@ -143,6 +158,7 @@ final class NativeReBacResolver
             /** @var Collection<int, Relation> $edges */
             $edges = Relation::query()->active()
                 ->where('relation', 'member')
+                ->when($minToken > 0, fn (Builder $q) => $q->where('consistency_token', '>=', $minToken)) // IAM-26
                 ->where(fn (Builder $w) => $w->whereNull('organization_id')->orWhere('organization_id', $organizationId))
                 ->where(fn (Builder $w) => $this->matchAnyRef($w, 'subject_type', 'subject_id', array_keys($frontier)))
                 ->get();
@@ -154,8 +170,18 @@ final class NativeReBacResolver
                 if (isset($result[$to])) {
                     continue; // cycle-guard / già visto
                 }
+                // IAM-09: un edge `member` condizionato la cui condition NON è soddisfatta non estende
+                // l'insieme (fail-closed). Senza questo una membership context-bound varrebbe come
+                // incondizionata quando è un hop intermedio.
+                if ($this->conditions->failed($edge->condition ?? [], $context) !== []) {
+                    continue;
+                }
                 $result[$to] = [...($result[$from] ?? []), "{$from} —member→ {$to}"];
                 $next[$to] = new SubjectRef($edge->object_type, $edge->object_id);
+            }
+            // IAM-22: breadth bound (fail-closed). Se l'insieme espanso supera il cap, smettiamo di crescere.
+            if (count($result) >= self::MAX_FRONTIER) {
+                break;
             }
             $frontier = $next;
         }
@@ -166,9 +192,10 @@ final class NativeReBacResolver
     /**
      * {O} ∪ antenati via `parent` (transitivo, bounded). Chiave "type:id" → cammino verso l'antenato.
      *
+     * @param  array<string, mixed>  $context  per valutare la condition ABAC di ogni edge `parent` (IAM-09)
      * @return array<string, list<string>>
      */
-    private function expandHierarchy(ResourceRef $object, ?string $organizationId): array
+    private function expandHierarchy(ResourceRef $object, ?string $organizationId, array $context = [], int $minToken = 0): array
     {
         $start = $object->type.':'.$object->id;
         $result = [$start => []];
@@ -178,6 +205,7 @@ final class NativeReBacResolver
             /** @var Collection<int, Relation> $edges */
             $edges = Relation::query()->active()
                 ->where('relation', 'parent')
+                ->when($minToken > 0, fn (Builder $q) => $q->where('consistency_token', '>=', $minToken)) // IAM-26
                 ->where(fn (Builder $w) => $w->whereNull('organization_id')->orWhere('organization_id', $organizationId))
                 ->where(fn (Builder $w) => $this->matchAnyRef($w, 'subject_type', 'subject_id', array_keys($frontier)))
                 ->get();
@@ -189,8 +217,16 @@ final class NativeReBacResolver
                 if (isset($result[$to])) {
                     continue;
                 }
+                // IAM-09: un edge `parent` condizionato non soddisfatto non estende la gerarchia (fail-closed).
+                if ($this->conditions->failed($edge->condition ?? [], $context) !== []) {
+                    continue;
+                }
                 $result[$to] = [...($result[$from] ?? []), "{$from} —parent→ {$to}"];
                 $next[$to] = new ResourceRef($edge->object_type, $edge->object_id);
+            }
+            // IAM-22: breadth bound (fail-closed).
+            if (count($result) >= self::MAX_FRONTIER) {
+                break;
             }
             $frontier = $next;
         }
@@ -227,6 +263,10 @@ final class NativeReBacResolver
                 $seen[$key] = $ref;
                 $next[$key] = $ref;
             }
+            // IAM-22: breadth bound (fail-closed) sull'espansione verso il basso.
+            if (count($seen) >= self::MAX_FRONTIER) {
+                break;
+            }
             $frontier = $next;
         }
 
@@ -262,6 +302,10 @@ final class NativeReBacResolver
                 $seen[$key] = $ref;
                 $next[$key] = $ref;
             }
+            // IAM-22: breadth bound (fail-closed) sull'espansione verso il basso.
+            if (count($seen) >= self::MAX_FRONTIER) {
+                break;
+            }
             $frontier = $next;
         }
 
@@ -282,6 +326,8 @@ final class NativeReBacResolver
 
             return;
         }
+        // IAM-22: bound the number of OR-terms (defense-in-depth; the frontier is already capped upstream).
+        $keys = array_slice($keys, 0, self::MAX_FRONTIER);
         foreach ($keys as $key) {
             $pos = strpos($key, ':');
             $type = $pos === false ? $key : substr($key, 0, $pos);

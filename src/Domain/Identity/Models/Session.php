@@ -57,7 +57,14 @@ final class Session extends Model
         $this->forceFill(['revoked_at' => now(), 'revoked_reason' => $reason !== '' ? $reason : 'revoked'])->save();
     }
 
-    /** Eleva l'AAL della sessione e registra l'istante di step-up. */
+    /**
+     * Eleva l'AAL della sessione e registra l'istante di step-up.
+     *
+     * IAM-43 (da fare quando esisterà una superficie HTTP di step-up): ruotare anche l'identificatore di
+     * sessione del framework (session()->migrate(true)) al momento dell'elevazione, così l'id che portava
+     * l'AAL inferiore viene ritirato. Qui (livello model, senza contesto HTTP) non è applicabile: va fatto
+     * nel controller di step-up insieme a questa chiamata.
+     */
     public function recordStepUp(string $aal): void
     {
         $this->forceFill(['aal' => $aal, 'step_up_at' => now()])->save();

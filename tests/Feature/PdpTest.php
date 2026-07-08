@@ -40,6 +40,7 @@ function ask(string $permission, array $opts = []): DecisionQuery
         resourceRef: $opts['resource'] ?? null,
         context: $opts['context'] ?? [],
         currentAal: $opts['aal'] ?? 'aal1',
+        explain: $opts['explain'] ?? false,
     );
 }
 
@@ -121,10 +122,20 @@ it('un grant revocato non concede (fail-closed, integrazione con M1)', function 
 it('EXPLAIN derivato + decision_id', function () {
     grantPerm('warehouse:stock.read');
 
-    $d = pdp()->decide(ask('warehouse:stock.read'));
+    // IAM-21: la spiegazione è esposta SOLO con explain=true (dato sensibile: grant id, path, context).
+    $d = pdp()->decide(ask('warehouse:stock.read', ['explain' => true]));
 
     expect($d->explanation)->not->toBeEmpty()
         ->and($d->decisionId)->toStartWith('dec_');
+});
+
+it('EXPLAIN: senza explain=true la spiegazione è vuota (IAM-21)', function () {
+    grantPerm('warehouse:stock.read');
+
+    $d = pdp()->decide(ask('warehouse:stock.read'));
+
+    expect($d->allowed)->toBeTrue()
+        ->and($d->explanation)->toBe([]);
 });
 
 it('policy_version riflette l\'organizzazione (consistency token)', function () {

@@ -6,6 +6,7 @@ namespace Tests;
 
 use Illuminate\Foundation\Application;
 use Orchestra\Testbench\TestCase as Orchestra;
+use Padosoft\Iam\Domain\Audit\Webhooks\WebhookUrlGuard;
 use Padosoft\Iam\IamServiceProvider;
 
 abstract class TestCase extends Orchestra
@@ -48,5 +49,14 @@ abstract class TestCase extends Orchestra
         if (is_file($cnf)) {
             $app['config']->set('iam.crypto.openssl_config', $cnf);
         }
+
+        // IAM-15: l'URL-guard dei webhook ora risolve l'hostname (difesa DNS-rebinding). I test usano host
+        // non risolvibili (es. hook.test): un resolver deterministico li mappa a un IP pubblico così il guard
+        // non li blocca. Gli IP LETTERALI (es. 169.254.169.254 dei test SSRF) non passano dal resolver e
+        // restano validati/bloccati come in produzione.
+        $app->bind(
+            WebhookUrlGuard::class,
+            fn (): WebhookUrlGuard => new WebhookUrlGuard(fn (string $host): array => ['93.184.216.34']),
+        );
     }
 }

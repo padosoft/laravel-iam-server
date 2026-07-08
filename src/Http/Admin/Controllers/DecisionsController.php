@@ -98,7 +98,12 @@ final class DecisionsController extends AdminController
         return $this->pdp->check([
             'subject' => ['type' => is_string($subject['type'] ?? null) ? $subject['type'] : 'user', 'id' => $subject['id']],
             'permission' => $permission,
-            'organization' => $this->stringInput($request, 'organization'),
+            // IAM-02: tenant scope comes from the actor's (resolved) org, NEVER the request body. The
+            // iam.can cross-tenant guard only inspects the `organization` QUERY param, so honouring a
+            // body-supplied org here would let a tenant-bound caller evaluate the PDP against any other
+            // tenant (a cross-tenant authorization/structure-disclosure oracle). Scope like listSubjects/
+            // listResources do — to context->organizationId (bound to the query org for unbound tokens).
+            'organization' => $this->context($request)->organizationId,
             'application' => $this->stringInput($request, 'application'),
             'resource' => $this->resourceRef($resource),
             'context' => is_array($context) ? $context : [],

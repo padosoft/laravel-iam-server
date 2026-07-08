@@ -25,8 +25,38 @@ final class NativeAssuranceProvider implements AssuranceProvider
             return Aal::AAL1;
         }
         $model = Session::query()->whereKey($session->id)->first();
+        if ($model === null) {
+            return Aal::AAL1;
+        }
 
-        return $model !== null ? Aal::fromString($model->aal) : Aal::AAL1;
+        $aal = Aal::fromString($model->aal);
+
+        // IAM-19: freshness. An AAL above AAL1 comes from a step-up and is valid only for a bounded window.
+        // Past it (or with no recorded step_up_at) the elevation has expired → fall back to AAL1 so a
+        // requires_step_up action forces a FRESH step-up instead of trusting a stale hours-old elevation.
+        if ($aal->rank() > Aal::AAL1->rank() && !$this->stepUpFresh($model)) {
+            return Aal::AAL1;
+        }
+
+        return $aal;
+    }
+
+    private function stepUpFresh(Session $model): bool
+    {
+        $stepUpAt = $model->step_up_at;
+        if ($stepUpAt === null) {
+            // IAM-19: nessuno step-up registrato → l'AAL è il livello di autenticazione INIZIALE
+            // (es. login con passkey = AAL2), non un'elevazione: non "scade", quindi resta valido.
+            // La finestra di freschezza si applica SOLO alle elevazioni via step-up (step_up_at valorizzato).
+            return true;
+        }
+        $window = config('iam.authentication.session.step_up_freshness', 900);
+        $window = is_numeric($window) ? (int) $window : 900;
+        if ($window <= 0) {
+            return true; // 0/negativo = freschezza disattivata (l'elevazione non scade)
+        }
+
+        return abs($stepUpAt->diffInSeconds(now())) <= $window;
     }
 
     public function supports(Aal $target): bool

@@ -108,6 +108,9 @@ final class GroupsController extends AdminController
         if ($model->revoked_at !== null) {
             throw ApiProblemException::conflict('Gruppo già revocato.');
         }
+        // IAM-18: revoke the conferred access, not just flag the group. Drop every ReBAC tuple the group
+        // participates in (member/nesting/ownership) and clear the member ledger, THEN soft-revoke the group.
+        $this->memberships->revokeAllForGroup($model);
         $model->revoke();
         $this->audit($request, 'iam.group.deleted', 'group', $model->id, []);
 

@@ -25,7 +25,11 @@ return [
         'session' => [
             'idle_timeout' => (int) env('IAM_SESSION_IDLE_TIMEOUT', 1800),          // secondi, 30m
             'absolute_timeout' => (int) env('IAM_SESSION_ABSOLUTE_TIMEOUT', 43200), // secondi, 12h (mai esteso)
-            'step_up_window' => (int) env('IAM_SESSION_STEPUP_WINDOW', 300),         // secondi, 5m
+            'step_up_window' => (int) env('IAM_SESSION_STEPUP_WINDOW', 300),         // secondi, 5m (validità della challenge)
+            // IAM-19: freschezza dell'ELEVAZIONE step-up. Un AAL2/AAL3 ottenuto via step-up "scade" dopo
+            // questa finestra: un'azione requires_step_up esige uno step-up RECENTE, non uno vecchio di ore.
+            // Oltre la finestra la sessione torna a valere AAL1 ai fini dell'autorizzazione step-up.
+            'step_up_freshness' => (int) env('IAM_SESSION_STEPUP_FRESHNESS', 900),   // secondi, 15m
             // null/0 = nessun limite di sessioni concorrenti per subject.
             'concurrent_limit' => is_numeric(env('IAM_SESSION_CONCURRENT_LIMIT')) ? (int) env('IAM_SESSION_CONCURRENT_LIMIT') : null,
             // Retention (giorni) delle righe iam_sessions terminate/scadute — le pota `iam:prune-sessions`.
@@ -63,6 +67,11 @@ return [
         // Limita la finestra utile di un'assertion rubata. Il jti resta single-use fino a exp (anti-replay).
         'client_assertion_max_lifetime' => (int) env('IAM_OAUTH_CLIENT_ASSERTION_MAX_LIFETIME', 300),
         'require_pkce' => true,         // PKCE S256 obbligatorio per i client public (doc 13 §9)
+        // IAM-29: scope pubblicati su /.well-known (discovery UNAUTENTICATO), oltre agli standard OIDC.
+        // NON pubblicare il catalogo cross-tenant: elenca qui solo gli scope volutamente advertisable.
+        'advertised_scopes' => [],
+        // IAM-35: rate limit del piano OIDC (userinfo/discovery), coerente col piano OAuth.
+        'oidc_rate_limit' => env('IAM_OIDC_RATE_LIMIT', '60,1'),
         'grants' => [
             'client_credentials' => true,
             'authorization_code' => true,
@@ -110,6 +119,11 @@ return [
         'ip_mode' => env('IAM_AUDIT_IP_MODE', 'hash'), // full | hash | none
         'ip_pepper' => env('IAM_AUDIT_IP_PEPPER'),
         'ua_mode' => env('IAM_AUDIT_UA_MODE', 'hash'),
+        // IAM-12: chiave HMAC della hash-chain (OPT-IN). Se valorizzata, la catena è HMAC-keyed con un
+        // segreto FUORI dalle tabelle di audit → un attaccante con sola-write sul DB non può ricalcolarla.
+        // Se NULL (default) la catena resta SHA-256 non-keyed: così un upgrade non invalida le catene già
+        // scritte. In prod: chiave dedicata in un KMS/secret store (ruotarla richiede un re-hash della catena).
+        'chain_key' => env('IAM_AUDIT_CHAIN_KEY'),
         'export' => ['format' => 'ocsf', 'sink' => env('IAM_AUDIT_SINK')], // ELK/SIEM
     ],
 

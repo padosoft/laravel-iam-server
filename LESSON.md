@@ -58,3 +58,30 @@
 - **Audit hash-chain verificabile.** Ogni mutazione passa da `AuditChainAppender`; la catena è verificabile
   via `audit/verify-chain`. PII soggetta a crypto-shredding/legal-hold (`Domain/Audit/Pii`), non cancellata
   in chiaro. `/ready` espone solo `status` (no info-disclosure su versioni/dipendenze).
+
+## Deep security review — remediation pass (branch claude/iam-package-review-xvbn8q)
+
+Una review avversariale (finder + verifica) ha prodotto 38 fix server. Lezioni trasversali:
+
+- **Controllo dichiarato ≠ controllo applicato.** Il pattern più pericoloso era "la primitiva esiste ma
+  nessuno la chiama": i checkpoint audit firmati (ES256) non erano letti dal verifier (IAM-07), il `sid`
+  non era controllato a userinfo/introspection/refresh (IAM-10/11), `requires_step_up` era stampato dal PDP
+  ma ignorato dal gate admin (IAM-04), lo status utente sospeso non era letto da nessun path (IAM-05),
+  `require_pkce` era config morto (IAM-38). Ogni invariante ha bisogno di un punto di enforcement CHE LO LEGGA.
+- **Una sola fonte di verità per il tenant.** `iam.can` autorizzava sull'org del query param, i controller
+  filtravano sull'org del token, `DecisionsController` leggeva l'org dal body, `AuditController` non
+  filtrava affatto: ogni divergenza era un break orizzontale. Fix: risolvere l'org UNA volta (il gate lega
+  il context) e scoparci sopra gate + controller + PDP + audit (IAM-01/02/03).
+- **Revoca deve avere effetto.** suspend, group-delete e session-revoke flippavano un flag lasciando vivi
+  grant, tuple ReBAC e token OAuth (IAM-05/10/11/18). Il containment cascata; l'enforcement (PDP nega,
+  userinfo rifiuta) è la seconda metà.
+- **Fail-closed dove il design lo vuole.** spec ABAC malformate (IAM-20), edge strutturali senza condition
+  (IAM-09), audience gate su stringa `APP_ENV` (IAM-13), self-fetch default true (IAM-14): tutti fail-open
+  silenziosi diventati fail-closed.
+- **TOCTOU è incoerente finché non lo verifichi TUTTO.** cancel()/rollback() lockavano, ma i fratelli
+  open()/close() e apply() no (IAM-16/17). Sotto Postgres, un catch(UniqueConstraintViolation) dentro una
+  transazione la avvelena: se il lock serializza già, il catch va rimosso.
+- **Integrità audit non può poggiare solo sul DB scrivibile.** Hash-chain keyed (HMAC) + ancora al
+  checkpoint firmato, non solo il confronto con `iam_audit_heads` (IAM-07/12).
+- **Config wired è config testabile.** Se una chiave di config non è letta da nessun codice (require_pkce),
+  non è un controllo: è un placeholder. Cablala e testala.

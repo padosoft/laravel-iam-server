@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Padosoft\Iam\Http\Controllers\OAuth;
 
 use Illuminate\Http\JsonResponse;
-use Padosoft\Iam\Domain\OAuth\Models\OauthScope;
 
 /**
  * Discovery endpoints (doc 13 §7):
@@ -70,11 +69,15 @@ final class DiscoveryController
      */
     private function scopesSupported(): array
     {
-        $catalog = OauthScope::query()->orderBy('identifier')->pluck('identifier')->all();
-        /** @var list<string> $catalog */
+        // IAM-29: this endpoint is UNAUTHENTICATED. Never derive scopes_supported from an unfiltered
+        // cross-tenant pluck of the whole catalog — that discloses every tenant's permission slugs to the
+        // public. Advertise only the standard OIDC scopes plus an explicitly curated allowlist
+        // (iam.oauth.advertised_scopes). scopes_supported is optional metadata, so omitting the catalog is safe.
         $standard = ['openid', 'profile', 'email'];
+        $advertised = config('iam.oauth.advertised_scopes', []);
+        $advertised = is_array($advertised) ? array_values(array_filter($advertised, 'is_string')) : [];
 
-        return array_values(array_unique([...$standard, ...$catalog]));
+        return array_values(array_unique([...$standard, ...$advertised]));
     }
 
     /**

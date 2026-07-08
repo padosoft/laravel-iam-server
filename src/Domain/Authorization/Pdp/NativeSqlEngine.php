@@ -13,6 +13,7 @@ use Padosoft\Iam\Domain\Authorization\Models\Grant;
 use Padosoft\Iam\Domain\Authorization\Models\Permission;
 use Padosoft\Iam\Domain\Authorization\Models\Role;
 use Padosoft\Iam\Domain\Governance\GrantUsageRecorder;
+use Padosoft\Iam\Domain\Identity\Models\User;
 use Padosoft\Iam\Domain\Organizations\Models\Organization;
 
 /**
@@ -33,6 +34,18 @@ final class NativeSqlEngine implements AuthorizationEngine
         $explain = [];
         $policyVersion = $this->policyVersion($q->organizationId);
         $decisionId = 'dec_'.Str::ulid()->toBase32();
+
+        // IAM-05: fail-closed on subject status. A suspended/disabled user must be denied everywhere,
+        // regardless of the grants they still hold — this is the enforcement half of user suspension
+        // (containment revokes sessions/tokens; this guarantees authz is denied even if one slips through).
+        if ($q->subject->type === 'user' && !$this->userActive($q->subject->id)) {
+            return new Decision(
+                allowed: false,
+                decisionId: $decisionId,
+                policyVersion: $policyVersion,
+                explanation: $this->explainIf($q, [...$explain, "Soggetto user:{$q->subject->id} non attivo (sospeso/disabilitato) → deny (fail-closed)."]),
+            );
+        }
 
         /** @var list<Grant> $denies */
         $denies = [];
@@ -66,7 +79,7 @@ final class NativeSqlEngine implements AuthorizationEngine
                 decisionId: $decisionId,
                 policyVersion: $policyVersion,
                 matched: [['type' => 'deny', 'key' => $g->privilege_key]],
-                explanation: [...$explain, "DENY esplicito da grant {$g->id} ({$g->privilege_key}) — deny-overrides."],
+                explanation: $this->explainIf($q, [...$explain, "DENY esplicito da grant {$g->id} ({$g->privilege_key}) — deny-overrides."]),
             );
         }
 
@@ -80,7 +93,7 @@ final class NativeSqlEngine implements AuthorizationEngine
                 allowed: false,
                 decisionId: $decisionId,
                 policyVersion: $policyVersion,
-                explanation: [...$explain, "Nessun permit valido per {$q->permission} → default-deny (fail-closed)."],
+                explanation: $this->explainIf($q, [...$explain, "Nessun permit valido per {$q->permission} → default-deny (fail-closed)."]),
             );
         }
 
@@ -107,8 +120,21 @@ final class NativeSqlEngine implements AuthorizationEngine
             requiresStepUp: $requiresStepUp,
             requiredAal: $requiresStepUp ? 'aal2' : null,
             matched: $matched,
-            explanation: $explain,
+            explanation: $this->explainIf($q, $explain),
         );
+    }
+
+    /**
+     * IAM-21: la spiegazione (grant id, path ReBAC, context ABAC riflesso) è dato sensibile e va esposta
+     * SOLO su richiesta esplicita (explain=true). Su /decisions/check il Decision resta snello
+     * (allow/deny + matched), così la spiegazione non finisce nella risposta né in una cache del client.
+     *
+     * @param  list<string>  $lines
+     * @return list<string>
+     */
+    private function explainIf(DecisionQuery $q, array $lines): array
+    {
+        return $q->explain ? $lines : [];
     }
 
     /**
@@ -200,6 +226,19 @@ final class NativeSqlEngine implements AuthorizationEngine
         $rank = ['aal1' => 1, 'aal2' => 2, 'aal3' => 3];
 
         return ($rank[$current] ?? 0) >= ($rank[$required] ?? 99);
+    }
+
+    /**
+     * IAM-05: un utente è "attivo" ai fini dell'autorizzazione se ha una riga in iam_users con
+     * status='active'. Un utente ESISTENTE ma sospeso/disabilitato → non attivo (deny). Un id non
+     * presente in iam_users (soggetto di una directory esterna) non è bloccato sullo status: sarà
+     * comunque soggetto a default-deny se non ha grant validi.
+     */
+    private function userActive(string $userId): bool
+    {
+        $status = User::query()->whereKey($userId)->value('status');
+
+        return $status === null || $status === 'active';
     }
 
     private function policyVersion(?string $organizationId): int

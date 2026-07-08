@@ -16,6 +16,9 @@ use Illuminate\Support\Carbon;
  * @property string $chain_id
  * @property bool $compromised
  * @property Carbon|null $auth_time
+ * @property string|null $sid
+ * @property string|null $acr
+ * @property array<int, string>|null $amr
  */
 final class OauthTokenChain extends Model
 {
@@ -28,10 +31,10 @@ final class OauthTokenChain extends Model
     protected $keyType = 'string';
 
     /** @var list<string> */
-    protected $fillable = ['chain_id', 'compromised', 'auth_time'];
+    protected $fillable = ['chain_id', 'compromised', 'auth_time', 'sid', 'acr', 'amr'];
 
     /** @var array<string, mixed> */
     protected $attributes = ['compromised' => false];
 
-    protected $casts = ['compromised' => 'boolean', 'auth_time' => 'datetime'];
+    protected $casts = ['compromised' => 'boolean', 'auth_time' => 'datetime', 'amr' => 'array'];
 }

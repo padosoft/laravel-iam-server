@@ -76,6 +76,12 @@ final class RelationsController extends AdminController
         if (!is_string($relation) || $relation === '' || strlen($relation) > 255) {
             throw ApiProblemException::unprocessable('Campo relation obbligatorio (max 255).', ['relation' => ['relation è obbligatorio (max 255)']]);
         }
+        // IAM-27: `member` è una relazione STRUTTURALE (nesting gruppi): scriverla da qui concederebbe una
+        // membership scavalcando il gate iam:groups.manage. Va gestita SOLO dagli endpoint dei gruppi
+        // (GroupMembershipService), quindi è riservata su questo endpoint generico relations.manage.
+        if ($relation === 'member') {
+            throw ApiProblemException::unprocessable("La relazione 'member' è riservata: gestisci le membership dagli endpoint dei gruppi (iam:groups.manage).", ['relation' => ["'member' è riservata agli endpoint dei gruppi"]]);
+        }
         $object = $request->input('object');
         if (!is_array($object) || !is_string($object['type'] ?? null) || !is_string($object['id'] ?? null) || $object['id'] === '') {
             throw ApiProblemException::unprocessable('Campo object {type,id} obbligatorio.', ['object' => ['object.type e object.id sono obbligatori']]);

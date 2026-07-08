@@ -40,9 +40,12 @@ final class LogTracer implements Tracer
 
     public function recordError(\Throwable $error, array $attributes = []): void
     {
+        // IAM-44: `message` valorizzato con la CLASSE dell'eccezione, mai getMessage() (può contenere
+        // secret/PII su alcuni path). Manteniamo il campo `message` presente per non rompere parser/alerting
+        // e per coerenza con OtlpTracer (che imposta message = classe).
         $this->logger->error('iam.error', [
             'error_type' => $error::class,
-            'message' => $error->getMessage(),
+            'message' => $error::class,
         ] + $this->scalarize($attributes));
     }
 

@@ -35,7 +35,8 @@ final class ManifestDiffer
             || $redirects['added'] !== [] || $redirects['removed'] !== []
             || $clientType
             || $this->touchesHighRiskPermission($permissions, $current, $next)
-            || $this->roleGrantsCriticalPermission($next);
+            || $this->roleGrantsCriticalPermission($next)
+            || $this->downgradesSecurityControl($permissions, $current, $next);
 
         return [
             'permissions' => $permissions,
@@ -165,6 +166,44 @@ final class ManifestDiffer
             $newRisk = $newByKey[$key]['risk'] ?? 'low';
             if (in_array($oldRisk, self::HIGH_RISK, true) || in_array($newRisk, self::HIGH_RISK, true)) {
                 return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * IAM-31: un cambio di CONTROLLO DI SICUREZZA deve SEMPRE passare dall'approvazione (separazione dei
+     * compiti), a prescindere dal risk level del permesso — altrimenti un manifest potrebbe togliere lo
+     * step-up a un permesso low-risk, o rendere un ruolo privileged/self_requestable, auto-approvandosi.
+     * Copre: requires_step_up true→false su un permesso; un ruolo che diventa (o nasce) is_privileged o
+     * self_requestable.
+     *
+     * @param  array{added: list<string>, changed: list<string>, removed: list<string>}  $permissions
+     * @param  array<string, mixed>  $current
+     * @param  array<string, mixed>  $next
+     */
+    private function downgradesSecurityControl(array $permissions, array $current, array $next): bool
+    {
+        $oldPerms = $this->items($current, 'permissions');
+        $newPerms = $this->items($next, 'permissions');
+        foreach ($permissions['changed'] as $key) {
+            $wasStepUp = ($oldPerms[$key]['requires_step_up'] ?? false) === true;
+            $nowStepUp = ($newPerms[$key]['requires_step_up'] ?? false) === true;
+            if ($wasStepUp && !$nowStepUp) {
+                return true; // step-up rimosso da un permesso
+            }
+        }
+
+        $oldRoles = $this->items($current, 'roles');
+        foreach ($this->items($next, 'roles') as $key => $role) {
+            $old = $oldRoles[$key] ?? null;
+            $newPriv = ($role['is_privileged'] ?? false) === true;
+            $newSelf = ($role['self_requestable'] ?? false) === true;
+            $oldPriv = is_array($old) && ($old['is_privileged'] ?? false) === true;
+            $oldSelf = is_array($old) && ($old['self_requestable'] ?? false) === true;
+            if (($newPriv && !$oldPriv) || ($newSelf && !$oldSelf)) {
+                return true; // ruolo che diventa privileged o self_requestable
             }
         }
 

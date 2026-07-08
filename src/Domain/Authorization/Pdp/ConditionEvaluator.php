@@ -21,6 +21,11 @@ final class ConditionEvaluator
 
         foreach ($conditions as $field => $spec) {
             if (!is_array($spec)) {
+                // IAM-20: fail-CLOSED on a malformed (non-object) condition spec. Skipping it would turn a
+                // conditional grant/edge into an unconditional one (fail-open). A scalar spec is a failed
+                // condition. Shapes are also validated at write time, so the PDP should never see this.
+                $failed[] = sprintf('%s: spec di condizione non valida (atteso oggetto {op: value})', (string) $field);
+
                 continue;
             }
             $hasField = array_key_exists($field, $context);

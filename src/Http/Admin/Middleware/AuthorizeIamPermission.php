@@ -40,10 +40,39 @@ final class AuthorizeIamPermission
             'subject' => ['type' => $context->actor->type, 'id' => $context->actor->id],
             'permission' => $permission,
             'organization' => $organizationId,
+            // IAM-04: thread the actor's real AAL so the PDP can decide whether this permission needs
+            // step-up. Without it the PDP defaults to aal1 and stamps requires_step_up, which we then
+            // enforce below.
+            'current_aal' => $context->aal,
         ]);
 
         if (($decision['allowed'] ?? false) !== true) {
             throw ApiProblemException::forbidden("Permesso {$permission} negato.");
+        }
+
+        // IAM-04: `granted`, not bare `allowed`, is the truth. A permit that still requires step-up
+        // (the actor's AAL is below the permission's required level) must NOT proceed — enforce the
+        // ecosystem's granted() = allowed && !requires_step_up invariant instead of the "allowed nudo"
+        // anti-pattern. Signal the required AAL so the caller can re-authenticate (step-up).
+        if (($decision['requires_step_up'] ?? false) === true) {
+            $requiredAal = $decision['required_aal'] ?? null;
+            throw ApiProblemException::stepUpRequired(is_string($requiredAal) ? $requiredAal : 'aal2');
+        }
+
+        // IAM-01: single source of truth for tenant scope. The gate authorized the permission against
+        // `$organizationId`; the controller/PDP/audit data layer must scope to the SAME org, never a wider
+        // one. When an unbound (null-org) token explicitly targets a tenant via `?organization=`, bind the
+        // admin context to that resolved org for the rest of the request so `context->organizationId`
+        // downstream equals what we authorized. The genuine see-all-tenants path stays gated: a null
+        // effective org only matches `organization_id IS NULL` (global) grants in the PDP, so an
+        // org-scoped grant plus a query param can never widen the data scope to global.
+        if ($context->organizationId === null && $organizationId !== null) {
+            $request->attributes->set('iam_admin_context', new AdminContext(
+                actor: $context->actor,
+                organizationId: $organizationId,
+                scopes: $context->scopes,
+                aal: $context->aal,
+            ));
         }
 
         return $next($request);

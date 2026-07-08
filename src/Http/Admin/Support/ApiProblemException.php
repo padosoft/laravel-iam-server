@@ -16,6 +16,7 @@ final class ApiProblemException extends \RuntimeException
 {
     /**
      * @param  array<string, list<string>>  $errors  errori per-campo (validazione)
+     * @param  array<string, mixed>  $extensions  membri di estensione RFC 9457 (es. required_aal)
      */
     public function __construct(
         private readonly int $status,
@@ -23,6 +24,7 @@ final class ApiProblemException extends \RuntimeException
         string $detail = '',
         private readonly array $errors = [],
         private readonly string $type = 'about:blank',
+        private readonly array $extensions = [],
     ) {
         parent::__construct($detail !== '' ? $detail : $title);
     }
@@ -48,6 +50,22 @@ final class ApiProblemException extends \RuntimeException
     }
 
     /**
+     * Step-up richiesto (IAM-04): il permesso è concesso ma esige un AAL superiore a quello dell'attore.
+     * Non è un permesso negato — l'attore deve ripetere l'autenticazione al livello indicato. Il
+     * `required_aal` è esposto come membro di estensione RFC 9457 così il client può avviare lo step-up.
+     */
+    public static function stepUpRequired(string $requiredAal): self
+    {
+        return new self(
+            403,
+            'Step-up required',
+            "Questa operazione richiede un livello di autenticazione {$requiredAal}: ripeti l'autenticazione (step-up).",
+            type: 'https://iam/problems/step-up-required',
+            extensions: ['required_aal' => $requiredAal],
+        );
+    }
+
+    /**
      * @param  array<string, list<string>>  $errors
      */
     public static function unprocessable(string $detail, array $errors = []): self
@@ -67,6 +85,12 @@ final class ApiProblemException extends \RuntimeException
         ];
         if ($this->errors !== []) {
             $body['errors'] = $this->errors;
+        }
+        // Membri di estensione RFC 9457 (top-level accanto a type/title/status), senza sovrascrivere i campi standard.
+        foreach ($this->extensions as $k => $v) {
+            if (!array_key_exists($k, $body)) {
+                $body[$k] = $v;
+            }
         }
 
         return new JsonResponse($body, $this->status, ['Content-Type' => 'application/problem+json']);

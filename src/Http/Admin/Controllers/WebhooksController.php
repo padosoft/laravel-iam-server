@@ -7,13 +7,11 @@ namespace Padosoft\Iam\Http\Admin\Controllers;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Padosoft\Iam\Contracts\Crypto\SecretCipher;
 use Padosoft\Iam\Domain\Audit\Models\AuditEvent;
 use Padosoft\Iam\Domain\Audit\Webhooks\Models\WebhookDelivery;
 use Padosoft\Iam\Domain\Audit\Webhooks\Models\WebhookSubscription;
-use Padosoft\Iam\Domain\Audit\Webhooks\WebhookRetrier;
 use Padosoft\Iam\Domain\Audit\Webhooks\WebhookSender;
 use Padosoft\Iam\Domain\Audit\Webhooks\WebhookUrlGuard;
 use Padosoft\Iam\Http\Admin\AdminController;
@@ -30,7 +28,6 @@ final class WebhooksController extends AdminController
     public function __construct(
         private readonly SecretCipher $cipher,
         private readonly WebhookSender $sender,
-        private readonly WebhookRetrier $retrier,
         private readonly WebhookUrlGuard $urlGuard,
     ) {}
 
@@ -170,23 +167,26 @@ final class WebhooksController extends AdminController
             throw ApiProblemException::notFound("Delivery \"{$delivery}\" non trovata.");
         }
         // Tenant scoping via la subscription della delivery (cross-tenant = 404 indistinguibile).
-        $this->find($request, $model->subscription_id);
+        $subscription = $this->find($request, $model->subscription_id);
 
         if ($model->status !== 'failed') {
             throw ApiProblemException::conflict('Solo una delivery in DLQ (failed) può essere riprodotta.');
         }
 
-        // Atomico: se il retrier solleva, lo stato 'retrying' viene annullato → la delivery resta
-        // 'failed' e ri-riproducibile (niente blocco permanente in 'retrying').
-        $retried = DB::transaction(function () use ($model): int {
-            $model->forceFill(['status' => 'retrying', 'next_retry_at' => now()])->save();
+        // IAM-34: riproduci SOLO QUESTA delivery. Il vecchio codice chiamava retryDue(), il batch GLOBALE
+        // che ritenta le delivery di TUTTI i tenant e ne restituiva il conteggio system-wide a un chiamante
+        // tenant-scoped (leak + effetti collaterali cross-tenant). Qui inviamo direttamente la sola delivery.
+        $event = AuditEvent::query()->find($model->event_uuid);
+        if ($event === null) {
+            throw ApiProblemException::conflict('Evento originale della delivery non più disponibile.');
+        }
 
-            return $this->retrier->retryDue();
-        });
+        $model->forceFill(['status' => 'retrying', 'next_retry_at' => now()])->save();
+        $this->sender->send($subscription, $model, $event);
 
         $this->audit($request, 'iam.webhook.delivery_replayed', 'webhook_delivery', $model->id, []);
 
-        return $this->ok(['id' => $model->id, 'retried' => $retried, 'status' => $model->fresh()?->status]);
+        return $this->ok(['id' => $model->id, 'status' => $model->fresh()?->status]);
     }
 
     private function requireSafeUrl(Request $request): string
