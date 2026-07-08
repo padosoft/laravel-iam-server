@@ -10,6 +10,7 @@ use Padosoft\Iam\Domain\Audit\AuditChainVerifier;
 use Padosoft\Iam\Domain\Audit\Events\EventsQuery;
 use Padosoft\Iam\Domain\Audit\Models\AuditEvent;
 use Padosoft\Iam\Http\Admin\AdminController;
+use Padosoft\Iam\Http\Admin\Support\ApiProblemException;
 
 /**
  * Admin API — Audit events + verifica catena (doc 16 §3, doc 12). Lettura cursor-based degli eventi
@@ -30,7 +31,10 @@ final class AuditController extends AdminController
         $typePrefix = is_string($request->query('type')) ? $request->query('type') : null;
         $limit = is_numeric($request->query('limit')) ? max(1, min(200, (int) $request->query('limit'))) : 50;
 
-        $page = $this->events->page($stream, $limit, $cursor, $typePrefix);
+        // IAM-03: never trust the raw `stream` param for tenant isolation. A tenant-bound caller only sees
+        // their own org's events (filter by organization_id); a global admin (null org) sees the stream.
+        $actorOrg = $this->context($request)->organizationId;
+        $page = $this->events->page($stream, $limit, $cursor, $typePrefix, $actorOrg);
 
         return new JsonResponse([
             'data' => array_map(fn (AuditEvent $e): array => $this->summary($e), $page->events),
@@ -41,11 +45,25 @@ final class AuditController extends AdminController
     public function verifyChain(Request $request): JsonResponse
     {
         $stream = is_string($request->query('stream')) && $request->query('stream') !== '' ? $request->query('stream') : 'global';
+
+        // IAM-03: chain verification covers a WHOLE stream, so a tenant-bound caller may only verify their
+        // own per-org stream (stream === their organization_id). Shared streams ('admin'/'governance'/
+        // 'authorization'/'global') and other tenants' streams commingle cross-tenant data; per the
+        // tenant-isolation=404 invariant they are indistinguishable from "not found" to a scoped caller.
+        $actorOrg = $this->context($request)->organizationId;
+        if ($actorOrg !== null && $stream !== $actorOrg) {
+            throw ApiProblemException::notFound();
+        }
+
         $result = $this->verifier->verify($stream);
 
         return $this->ok([
             'stream' => $stream,
             'valid' => $result->valid,
+            // IAM-07: `anchored` = the head is backed by a valid ES256-signed checkpoint (tamper-evident
+            // even against a DB-write insider). `valid && !anchored` means internally consistent but not
+            // yet checkpoint-anchored — auditors should require anchored=true for strong assurance.
+            'anchored' => $result->anchored,
             'checked' => $result->checked,
             'first_broken_uuid' => $result->firstBrokenUuid,
             'reason' => $result->reason,

@@ -39,8 +39,10 @@ final class NativeReBacResolver
     public function hasRelation(SubjectRef $subject, string $relation, ResourceRef $object, array $context = [], ?string $organizationId = null, int $minToken = 0): RelationResult
     {
         $rels = $this->rewrite->satisfying($relation);
-        $subjects = $this->expandGroups($subject, $organizationId); // [key => chain]
-        $targets = $this->expandHierarchy($object, $organizationId); // [key => chain]
+        // IAM-09: pass the ABAC context into the transitive expansion so a condition on a structural
+        // (member/parent) edge is honoured at every hop, not only on the final candidate tuple.
+        $subjects = $this->expandGroups($subject, $organizationId, $context); // [key => chain]
+        $targets = $this->expandHierarchy($object, $organizationId, $context); // [key => chain]
 
         /** @var Collection<int, Relation> $candidates */
         $candidates = Relation::query()->active()
@@ -131,9 +133,10 @@ final class NativeReBacResolver
     /**
      * {S} ∪ gruppi di cui S è membro (transitivo, bounded). Chiave "type:id" → cammino dal soggetto.
      *
+     * @param  array<string, mixed>  $context  per valutare la condition ABAC di ogni edge `member` (IAM-09)
      * @return array<string, list<string>>
      */
-    private function expandGroups(SubjectRef $subject, ?string $organizationId): array
+    private function expandGroups(SubjectRef $subject, ?string $organizationId, array $context = []): array
     {
         $start = $subject->type.':'.$subject->id;
         $result = [$start => []];
@@ -154,6 +157,12 @@ final class NativeReBacResolver
                 if (isset($result[$to])) {
                     continue; // cycle-guard / già visto
                 }
+                // IAM-09: un edge `member` condizionato la cui condition NON è soddisfatta non estende
+                // l'insieme (fail-closed). Senza questo una membership context-bound varrebbe come
+                // incondizionata quando è un hop intermedio.
+                if ($this->conditions->failed($edge->condition ?? [], $context) !== []) {
+                    continue;
+                }
                 $result[$to] = [...($result[$from] ?? []), "{$from} —member→ {$to}"];
                 $next[$to] = new SubjectRef($edge->object_type, $edge->object_id);
             }
@@ -166,9 +175,10 @@ final class NativeReBacResolver
     /**
      * {O} ∪ antenati via `parent` (transitivo, bounded). Chiave "type:id" → cammino verso l'antenato.
      *
+     * @param  array<string, mixed>  $context  per valutare la condition ABAC di ogni edge `parent` (IAM-09)
      * @return array<string, list<string>>
      */
-    private function expandHierarchy(ResourceRef $object, ?string $organizationId): array
+    private function expandHierarchy(ResourceRef $object, ?string $organizationId, array $context = []): array
     {
         $start = $object->type.':'.$object->id;
         $result = [$start => []];
@@ -187,6 +197,10 @@ final class NativeReBacResolver
                 $from = $edge->subject_type.':'.$edge->subject_id;
                 $to = $edge->object_type.':'.$edge->object_id;
                 if (isset($result[$to])) {
+                    continue;
+                }
+                // IAM-09: un edge `parent` condizionato non soddisfatto non estende la gerarchia (fail-closed).
+                if ($this->conditions->failed($edge->condition ?? [], $context) !== []) {
                     continue;
                 }
                 $result[$to] = [...($result[$from] ?? []), "{$from} —parent→ {$to}"];

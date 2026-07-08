@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Padosoft\Iam\Domain\Audit;
 
+use Padosoft\Iam\Domain\Audit\Models\AuditCheckpoint;
 use Padosoft\Iam\Domain\Audit\Models\AuditEvent;
 use Padosoft\Iam\Domain\Audit\Models\AuditHead;
 
@@ -11,16 +12,42 @@ use Padosoft\Iam\Domain\Audit\Models\AuditHead;
  * Verifica l'integrità di una hash-chain (doc 12 §2.4): ricalcola hash/prev_hash riga per riga e
  * controlla la contiguità di `seq`. Ritorna OK oppure il PRIMO punto di rottura (manomissione di un
  * campo, hash incoerente, link spezzato o buco nella sequenza = cancellazione/riordino).
+ *
+ * IAM-07: l'hash-chain è un SHA-256 non-keyed e la testa (`iam_audit_heads`) vive nello stesso DB
+ * scrivibile che deve proteggere — un attaccante con write può riscrivere la catena e la testa e
+ * passare comunque. L'unico artefatto non forgiabile è il checkpoint firmato ES256. Perciò qui,
+ * oltre alla consistenza interna, ancoriamo la verifica al checkpoint firmato più alto: ne validiamo
+ * la firma (via TokenSigner/JWKS) e confrontiamo l'hash RICALCOLATO al suo `up_to_seq` con l'`head_hash`
+ * firmato. Fail-closed. Un attaccante che riscrive la catura sotto il checkpoint viene smascherato dal
+ * mismatch; un troncamento sotto il checkpoint dal fatto che la catena è più corta del seq firmato.
  */
 final class AuditChainVerifier
 {
-    public function __construct(private readonly AuditHasher $hasher) {}
+    public function __construct(
+        private readonly AuditHasher $hasher,
+        private readonly AuditCheckpointer $checkpointer,
+    ) {}
 
     public function verify(string $stream): AuditVerificationResult
     {
+        // Il checkpoint firmato più alto è l'ancora di fiducia (indipendente dal DB scrivibile).
+        $checkpoint = AuditCheckpoint::query()
+            ->where('stream', $stream)
+            ->orderByDesc('up_to_seq')
+            ->first();
+
+        if ($checkpoint !== null) {
+            // Firma non valida/manomessa/scaduta → fail-closed subito: l'ancora non è affidabile.
+            $checkpointResult = $this->checkpointer->verify($checkpoint);
+            if (!$checkpointResult->valid) {
+                return $checkpointResult;
+            }
+        }
+
         $prevHash = AuditHasher::GENESIS;
         $expectedSeq = 1;
         $checked = 0;
+        $hashAtCheckpoint = null;
 
         /** @var iterable<AuditEvent> $events */
         $events = AuditEvent::query()
@@ -51,8 +78,26 @@ final class AuditChainVerifier
                 return AuditVerificationResult::broken($checked, $event->uuid, 'hash ricalcolato diverso (riga manomessa)');
             }
 
+            // IAM-07: cattura l'hash ricalcolato ESATTAMENTE al seq firmato dal checkpoint.
+            if ($checkpoint !== null && $event->seq === $checkpoint->up_to_seq) {
+                $hashAtCheckpoint = (string) $event->hash;
+            }
+
             $prevHash = $event->hash;
             $expectedSeq++;
+        }
+
+        // IAM-07: ancoraggio al checkpoint firmato. La catena DEVE arrivare almeno fino al seq firmato
+        // (un troncamento sotto il checkpoint = catena più corta del seq ancorato) e l'hash ricalcolato
+        // a quel seq DEVE combaciare con l'head_hash firmato (una riscrittura sotto il checkpoint cambia
+        // l'hash). Nessuno dei due dipende dalla testa scrivibile.
+        if ($checkpoint !== null) {
+            if ($hashAtCheckpoint === null) {
+                return AuditVerificationResult::broken($checked, null, "catena troncata sotto il checkpoint firmato (seq {$checkpoint->up_to_seq} assente)", 'tail_truncated');
+            }
+            if (!hash_equals($hashAtCheckpoint, $checkpoint->head_hash)) {
+                return AuditVerificationResult::broken($checked, null, 'hash ricalcolato al checkpoint diverso dall\'head_hash firmato (catena riscritta sotto il checkpoint)', 'tampered');
+            }
         }
 
         // Troncamento di coda: cancellare gli ultimi N eventi lascia un prefisso valido, ma la testa
@@ -71,6 +116,8 @@ final class AuditChainVerifier
             }
         }
 
-        return AuditVerificationResult::ok($checked);
+        // `anchored` è vero solo se un checkpoint firmato valido ha ancorato la testa; altrimenti la
+        // catena è internamente coerente ma non ancorata (segnale onesto per l'auditor).
+        return AuditVerificationResult::ok($checked, anchored: $checkpoint !== null);
     }
 }

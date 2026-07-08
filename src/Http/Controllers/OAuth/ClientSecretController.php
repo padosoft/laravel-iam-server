@@ -6,6 +6,7 @@ namespace Padosoft\Iam\Http\Controllers\OAuth;
 
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Padosoft\Iam\Domain\OAuth\ClientAssertionContext;
 use Padosoft\Iam\Domain\OAuth\Models\OauthClient;
 use Padosoft\Iam\Domain\OAuth\Repositories\ClientRepository;
 
@@ -18,13 +19,23 @@ use Padosoft\Iam\Domain\OAuth\Repositories\ClientRepository;
  */
 final class ClientSecretController
 {
-    public function __construct(private readonly ClientRepository $clients) {}
+    public function __construct(
+        private readonly ClientRepository $clients,
+        private readonly ClientAssertionContext $assertions,
+    ) {}
 
     public function current(Request $request): JsonResponse
     {
-        if (config('iam.oauth.client_selffetch', true) !== true) {
+        // IAM-14: fail-CLOSED default. If the config key is absent (config not published, or stripped),
+        // the self-fetch endpoint is OFF — never on. It is opt-in and only enabled where auto-rotation runs.
+        if (config('iam.oauth.client_selffetch', false) !== true) {
             return response()->json(['error' => 'not_found'], 404);
         }
+
+        // IAM-06: self-fetch authenticates the client by its OWN secret, never by a client_assertion.
+        // Reset the shared assertion context so a stale verified client_id from a prior /token request on
+        // the same worker cannot authenticate a private_key_jwt client here (validateClient fails closed).
+        $this->assertions->reset();
 
         [$clientId, $clientSecret] = $this->credentials($request);
         // Gate: deve autenticarsi col proprio secret (corrente O precedente-in-grace). Fail-closed.

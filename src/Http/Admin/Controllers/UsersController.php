@@ -13,6 +13,7 @@ use Illuminate\Support\Str;
 use Padosoft\Iam\Domain\Authorization\Models\Grant;
 use Padosoft\Iam\Domain\Authorization\Models\Role;
 use Padosoft\Iam\Domain\Identity\Models\User;
+use Padosoft\Iam\Domain\Identity\SubjectRevoker;
 use Padosoft\Iam\Domain\Organizations\Models\Membership;
 use Padosoft\Iam\Http\Admin\AdminController;
 use Padosoft\Iam\Http\Admin\Support\ApiProblemException;
@@ -166,7 +167,7 @@ final class UsersController extends AdminController
         return $this->ok(['user_id' => $user, 'permissions' => $permissions]);
     }
 
-    public function suspend(Request $request, string $user): JsonResponse
+    public function suspend(Request $request, string $user, SubjectRevoker $revoker): JsonResponse
     {
         $model = $this->find($user, $this->context($request)->organizationId);
         if ($model->status === 'suspended') {
@@ -174,6 +175,12 @@ final class UsersController extends AdminController
         }
         $reason = $request->input('reason');
         $model->changeStatus('suspended', $this->context($request)->actorRef(), is_string($reason) ? $reason : '', 'admin-api');
+
+        // IAM-05: suspend is a containment action, not a cosmetic flag. Immediately revoke the user's
+        // server-side sessions and live OAuth tokens so access stops NOW (the PDP also denies a
+        // non-active subject, so this is belt-and-braces). Without this an existing session/bearer would
+        // keep working until natural expiry.
+        $revoker->revokeUserAccess($user, 'user-suspended');
 
         $this->audit($request, 'iam.user.suspended', 'user', $user, ['reason' => is_string($reason) ? $reason : null], ['status' => 'active'], ['status' => 'suspended']);
 

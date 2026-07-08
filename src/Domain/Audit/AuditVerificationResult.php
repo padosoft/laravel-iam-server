@@ -16,11 +16,16 @@ final class AuditVerificationResult
         public readonly ?string $firstBrokenUuid = null,
         public readonly ?string $reason = null,
         public readonly ?string $cause = null,
+        // IAM-07: true only when the head is anchored by a valid ES256-signed checkpoint (the one
+        // artifact a DB-write attacker cannot forge). A chain can be internally consistent yet
+        // unanchored (no checkpoint yet) — that is `valid=true, anchored=false`, an honest signal to
+        // auditors that the result rests on the writable DB alone, not on a signature.
+        public readonly bool $anchored = false,
     ) {}
 
-    public static function ok(int $checked): self
+    public static function ok(int $checked, bool $anchored = false): self
     {
-        return new self(true, $checked);
+        return new self(true, $checked, anchored: $anchored);
     }
 
     /**

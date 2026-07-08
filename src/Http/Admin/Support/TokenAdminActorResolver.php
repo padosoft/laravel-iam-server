@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Padosoft\Iam\Http\Admin\Support;
 
 use Illuminate\Http\Request;
+use Padosoft\Iam\Contracts\Assurance\Aal;
 use Padosoft\Iam\Contracts\Crypto\TokenSigner;
 use Padosoft\Iam\Contracts\Support\SubjectRef;
 
@@ -41,8 +42,12 @@ final class TokenAdminActorResolver implements AdminActorResolver
         $expectedAud = config('iam.admin.audience');
         $expectedAud = is_string($expectedAud) && $expectedAud !== '' ? $expectedAud : null;
         if ($expectedAud === null) {
-            if (app()->environment('production')) {
-                return null; // misconfiguration in prod → fail-closed, non fail-open
+            // IAM-13: fail-CLOSED by default when no admin audience is configured. Only the explicit
+            // dev/test environments tolerate a missing audience; any other APP_ENV — production, staging,
+            // `prod`, `production-eu`, or any unrecognised string — rejects. A misconfiguration must never
+            // widen access, and the old exact-string `production` check fell open for every other value.
+            if (!app()->environment('local', 'testing')) {
+                return null;
             }
         } elseif (!$this->audienceMatches($claims, $expectedAud)) {
             return null;
@@ -56,7 +61,22 @@ final class TokenAdminActorResolver implements AdminActorResolver
             actor: new SubjectRef('user', $sub),
             organizationId: is_string($org) && $org !== '' ? $org : null,
             scopes: $scopes,
+            aal: $this->assuranceLevel($claims),
         );
+    }
+
+    /**
+     * Livello di assurance dell'attore, per l'enforcement dello step-up sull'Admin API (IAM-04).
+     * Fonte: claim `aal` esplicito, altrimenti `acr` (OIDC). Normalizzato via Aal::fromString che
+     * fa fail-closed su valori assenti/sconosciuti → `aal1` (il livello più basso).
+     *
+     * @param  array<string, mixed>  $claims
+     */
+    private function assuranceLevel(array $claims): string
+    {
+        $raw = $claims['aal'] ?? $claims['acr'] ?? null;
+
+        return Aal::fromString(is_string($raw) ? $raw : null)->value;
     }
 
     /**

@@ -65,11 +65,16 @@ final class IdempotencyKey
 
         // Salva l'esito solo se NON è un 5xx: gli errori server restano riprovabili con la stessa chiave.
         if ($response->getStatusCode() < 500) {
+            $body = $response->getContent();
             DB::table(self::TABLE)
                 ->where('actor_ref', $actorRef)->where('idempotency_key', $key)
                 ->update([
                     'response_status' => $response->getStatusCode(),
-                    'response_body' => $response->getContent() === false ? null : $response->getContent(),
+                    // IAM-08: never persist one-time secrets in clear. Some admin mutations (rotate-secret,
+                    // manifest apply) return a freshly minted client_secret in the body; the caller already
+                    // received the real value in the live response above — the STORED/replayed copy is
+                    // redacted so the idempotency table never becomes a recoverable cleartext credential store.
+                    'response_body' => $body === false ? null : $this->redactSecrets($body),
                     'updated_at' => now(),
                 ]);
         } else {
@@ -116,6 +121,41 @@ final class IdempotencyKey
             (int) $status,
             ['Content-Type' => 'application/json', 'Idempotency-Replayed' => 'true'],
         );
+    }
+
+    /**
+     * IAM-08: redige i campi segreti da un body JSON prima di persisterlo (replay idempotente). I
+     * segreti one-time (client_secret, secret, access_token, refresh_token, secret_previous) non devono
+     * mai finire in chiaro nello store. Un body non-JSON viene restituito invariato (le risposte admin
+     * sono JSON; un formato ignoto non è un vettore noto di segreti).
+     */
+    private function redactSecrets(string $body): string
+    {
+        $decoded = json_decode($body, true);
+        if (!is_array($decoded)) {
+            return $body;
+        }
+        $redacted = $this->redactArray($decoded);
+
+        return json_encode($redacted, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: $body;
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $data
+     * @return array<array-key, mixed>
+     */
+    private function redactArray(array $data): array
+    {
+        $secretKeys = ['client_secret', 'secret', 'secret_previous', 'access_token', 'refresh_token', 'private_key', 'password'];
+        foreach ($data as $k => $v) {
+            if (is_string($k) && in_array(strtolower($k), $secretKeys, true) && $v !== null) {
+                $data[$k] = '[REDACTED]';
+            } elseif (is_array($v)) {
+                $data[$k] = $this->redactArray($v);
+            }
+        }
+
+        return $data;
     }
 
     /** Secondi oltre i quali un claim senza esito è considerato orfano (default 60s). */

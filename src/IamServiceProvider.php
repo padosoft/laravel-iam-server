@@ -14,6 +14,7 @@ use Padosoft\Iam\Console\Commands\MakeJwkCommand;
 use Padosoft\Iam\Console\Commands\ManifestApplyCommand;
 use Padosoft\Iam\Console\Commands\ManifestRollbackCommand;
 use Padosoft\Iam\Console\Commands\ManifestValidateCommand;
+use Padosoft\Iam\Console\Commands\PruneIdempotencyKeysCommand;
 use Padosoft\Iam\Console\Commands\PruneSessionsCommand;
 use Padosoft\Iam\Console\Commands\ReviewsCloseCommand;
 use Padosoft\Iam\Console\Commands\ReviewsOpenCommand;
@@ -94,6 +95,7 @@ final class IamServiceProvider extends PackageServiceProvider
                 LeastPrivilegeScanCommand::class,
                 RotateDueSecretsCommand::class,
                 PruneSessionsCommand::class,
+                PruneIdempotencyKeysCommand::class,
                 MakeJwkCommand::class,
             ]);
     }
