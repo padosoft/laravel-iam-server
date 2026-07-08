@@ -105,8 +105,11 @@ final class IdempotencyKey
             // Claim presente ma esito non ancora salvato: richiesta concorrente in volo OPPURE claim
             // orfano (processo morto tra claim ed esito). Oltre un timeout lo consideriamo orfano e lo
             // rilasciamo, così i retry non restano bloccati in 409 per sempre (no deadlock idempotente).
+            // IAM-41: elapsed time must be a POSITIVE magnitude. Carbon::diffInSeconds is signed, so the
+            // old `now()->diffInSeconds(createdAt)` was negative for a past timestamp and the orphan release
+            // never fired (keys stranded at 409). Compare timestamps directly for an unambiguous elapsed.
             $createdAt = $row->created_at ?? null;
-            $age = is_string($createdAt) ? now()->diffInSeconds(Carbon::parse($createdAt)) : 0;
+            $age = is_string($createdAt) ? now()->getTimestamp() - Carbon::parse($createdAt)->getTimestamp() : 0;
             if ($age >= $this->inFlightTimeout()) {
                 DB::table(self::TABLE)->where('actor_ref', $actorRef)->where('idempotency_key', $key)->delete();
             }

@@ -16,6 +16,18 @@ final class ManifestValidator
     /** Tipi di app riconosciuti: `service` → client_credentials, gli altri → authorization_code (doc 01 §10). */
     private const APP_TYPES = ['laravel', 'spa', 'mobile', 'service'];
 
+    // IAM-33: cap di dimensione. Un manifest è applicato in UNA transazione con un upsert per elemento:
+    // senza limiti un payload enorme è un vettore di resource-exhaustion. Rifiutato come invalido a monte.
+    private const MAX_PERMISSIONS = 1000;
+
+    private const MAX_ROLES = 500;
+
+    private const MAX_REDIRECT_URIS = 50;
+
+    private const MAX_ROLE_PERMISSION_REFS = 1000;
+
+    private const MAX_KEY_LENGTH = 128;
+
     /**
      * @param  array<string, mixed>  $manifest
      */
@@ -48,14 +60,27 @@ final class ManifestValidator
         if (!in_array($auth['client_type'] ?? 'confidential', ['confidential', 'public'], true)) {
             $errors[] = 'auth.client_type non valido (confidential|public)';
         }
-        foreach ($this->arr($auth['redirect_uris'] ?? null) as $uri) {
+        $redirects = $this->arr($auth['redirect_uris'] ?? null);
+        if (count($redirects) > self::MAX_REDIRECT_URIS) {
+            $errors[] = 'auth.redirect_uris supera il massimo di '.self::MAX_REDIRECT_URIS;
+        }
+        foreach ($redirects as $uri) {
             if (!$this->isValidRedirect($uri)) {
                 $errors[] = 'auth.redirect_uris contiene una URI non valida (assoluta, no wildcard): '.(is_string($uri) ? $uri : 'n/d');
             }
         }
 
+        $permissions = $this->arr($manifest['permissions'] ?? null);
+        if (count($permissions) > self::MAX_PERMISSIONS) {
+            $errors[] = 'permissions supera il massimo di '.self::MAX_PERMISSIONS;
+        }
+        $roles = $this->arr($manifest['roles'] ?? null);
+        if (count($roles) > self::MAX_ROLES) {
+            $errors[] = 'roles supera il massimo di '.self::MAX_ROLES;
+        }
+
         $permissionKeys = [];
-        foreach ($this->arr($manifest['permissions'] ?? null) as $index => $perm) {
+        foreach ($permissions as $index => $perm) {
             if (!is_array($perm)) {
                 $errors[] = "permissions[{$index}] non è un oggetto";
 
@@ -78,7 +103,7 @@ final class ManifestValidator
             }
         }
 
-        foreach ($this->arr($manifest['roles'] ?? null) as $index => $role) {
+        foreach ($roles as $index => $role) {
             if (!is_array($role)) {
                 $errors[] = "roles[{$index}] non è un oggetto";
 
@@ -90,7 +115,11 @@ final class ManifestValidator
 
                 continue;
             }
-            foreach ($this->arr($role['permissions'] ?? null) as $ref) {
+            $refs = $this->arr($role['permissions'] ?? null);
+            if (count($refs) > self::MAX_ROLE_PERMISSION_REFS) {
+                $errors[] = "roles[{$key}] supera il massimo di ".self::MAX_ROLE_PERMISSION_REFS.' permessi referenziati';
+            }
+            foreach ($refs as $ref) {
                 if (!in_array($ref, $permissionKeys, true)) {
                     $errors[] = "roles[{$key}] referenzia un permission non dichiarato: ".(is_string($ref) ? $ref : 'n/d');
                 }
@@ -102,7 +131,8 @@ final class ManifestValidator
 
     private function isValidKey(string $key): bool
     {
-        return preg_match('/^[a-z][a-z0-9_.-]*$/', $key) === 1;
+        // IAM-33: bound anche la lunghezza dello slug (oltre alla forma) — niente chiavi patologiche.
+        return strlen($key) <= self::MAX_KEY_LENGTH && preg_match('/^[a-z][a-z0-9_.-]*$/', $key) === 1;
     }
 
     private function isValidRedirect(mixed $uri): bool

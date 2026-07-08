@@ -49,8 +49,10 @@ final class NativeReBacResolver
         $rels = $this->rewrite->satisfying($relation);
         // IAM-09: pass the ABAC context into the transitive expansion so a condition on a structural
         // (member/parent) edge is honoured at every hop, not only on the final candidate tuple.
-        $subjects = $this->expandGroups($subject, $organizationId, $context); // [key => chain]
-        $targets = $this->expandHierarchy($object, $organizationId, $context); // [key => chain]
+        // IAM-26: also propagate the consistency_token floor so a stale structural edge cannot satisfy a
+        // read-your-writes (minToken) query through an intermediate hop.
+        $subjects = $this->expandGroups($subject, $organizationId, $context, $minToken); // [key => chain]
+        $targets = $this->expandHierarchy($object, $organizationId, $context, $minToken); // [key => chain]
 
         /** @var Collection<int, Relation> $candidates */
         $candidates = Relation::query()->active()
@@ -146,7 +148,7 @@ final class NativeReBacResolver
      * @param  array<string, mixed>  $context  per valutare la condition ABAC di ogni edge `member` (IAM-09)
      * @return array<string, list<string>>
      */
-    private function expandGroups(SubjectRef $subject, ?string $organizationId, array $context = []): array
+    private function expandGroups(SubjectRef $subject, ?string $organizationId, array $context = [], int $minToken = 0): array
     {
         $start = $subject->type.':'.$subject->id;
         $result = [$start => []];
@@ -156,6 +158,7 @@ final class NativeReBacResolver
             /** @var Collection<int, Relation> $edges */
             $edges = Relation::query()->active()
                 ->where('relation', 'member')
+                ->when($minToken > 0, fn (Builder $q) => $q->where('consistency_token', '>=', $minToken)) // IAM-26
                 ->where(fn (Builder $w) => $w->whereNull('organization_id')->orWhere('organization_id', $organizationId))
                 ->where(fn (Builder $w) => $this->matchAnyRef($w, 'subject_type', 'subject_id', array_keys($frontier)))
                 ->get();
@@ -192,7 +195,7 @@ final class NativeReBacResolver
      * @param  array<string, mixed>  $context  per valutare la condition ABAC di ogni edge `parent` (IAM-09)
      * @return array<string, list<string>>
      */
-    private function expandHierarchy(ResourceRef $object, ?string $organizationId, array $context = []): array
+    private function expandHierarchy(ResourceRef $object, ?string $organizationId, array $context = [], int $minToken = 0): array
     {
         $start = $object->type.':'.$object->id;
         $result = [$start => []];
@@ -202,6 +205,7 @@ final class NativeReBacResolver
             /** @var Collection<int, Relation> $edges */
             $edges = Relation::query()->active()
                 ->where('relation', 'parent')
+                ->when($minToken > 0, fn (Builder $q) => $q->where('consistency_token', '>=', $minToken)) // IAM-26
                 ->where(fn (Builder $w) => $w->whereNull('organization_id')->orWhere('organization_id', $organizationId))
                 ->where(fn (Builder $w) => $this->matchAnyRef($w, 'subject_type', 'subject_id', array_keys($frontier)))
                 ->get();

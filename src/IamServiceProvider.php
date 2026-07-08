@@ -263,14 +263,20 @@ final class IamServiceProvider extends PackageServiceProvider
             'auth_code_ttl' => is_int($authCode) ? $authCode : 600,
             'refresh_ttl' => is_int($refresh) ? $refresh : 1209600,
             'grants' => $normalizedGrants,
+            // IAM-38: wire the config through so the factory honours it (default secure = true).
+            'require_pkce' => (bool) config('iam.oauth.require_pkce', true),
         ];
     }
 
     private function resolveIssuer(): string
     {
         $issuer = config('iam.tokens.issuer') ?? config('app.url');
+        $issuer = is_string($issuer) && $issuer !== '' ? $issuer : 'https://iam.local';
 
-        return is_string($issuer) && $issuer !== '' ? $issuer : 'https://iam.local';
+        // IAM-37: normalize (strip trailing slash) so the signer's `iss` is byte-identical to the value
+        // DiscoveryController advertises (which already rtrims); otherwise a trailing slash in config makes
+        // id_token iss validation fail against the discovery issuer.
+        return rtrim($issuer, '/');
     }
 
     private function resolveOpensslConfig(): ?string
@@ -322,7 +328,12 @@ final class IamServiceProvider extends PackageServiceProvider
             Route::prefix(is_string($prefix) ? $prefix : 'oauth')
                 ->middleware($middleware)
                 ->group(__DIR__.'/../routes/oauth.php');
-            Route::group([], __DIR__.'/../routes/oidc.php');
+
+            // IAM-35: rate-limit the OIDC plane too (userinfo is Bearer-authed but still abusable;
+            // discovery is public). Falls back to the OAuth throttle if oidc_rate_limit is unset.
+            $oidcRate = config('iam.oauth.oidc_rate_limit');
+            $oidcMiddleware = is_string($oidcRate) && $oidcRate !== '' ? ['throttle:'.$oidcRate] : $middleware;
+            Route::middleware($oidcMiddleware)->group(__DIR__.'/../routes/oidc.php');
         }
 
         // M10: Admin API sotto /api/iam/v1 (configurabile). Autenticata + idempotente; ogni rotta

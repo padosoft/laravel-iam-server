@@ -105,8 +105,17 @@ final class ClientAssertionVerifier
         if ($nbf instanceof \DateTimeInterface && $nbf->getTimestamp() > $now + 5) {
             return null;
         }
+        // IAM-36: require iat and bound the assertion lifetime BOTH relative to iat and to NOW. Making iat
+        // optional let a client set exp arbitrarily far in the future (unbounded replay window while the jti
+        // stays cached). A short-lived assertion must expire soon regardless of what iat claims.
         $iat = $claims->get('iat');
-        if ($iat instanceof \DateTimeInterface && $exp->getTimestamp() - $iat->getTimestamp() > $this->maxLifetimeSeconds) {
+        if (!$iat instanceof \DateTimeInterface) {
+            return null;
+        }
+        if ($exp->getTimestamp() - $iat->getTimestamp() > $this->maxLifetimeSeconds) {
+            return null;
+        }
+        if ($exp->getTimestamp() - $now > $this->maxLifetimeSeconds) {
             return null;
         }
 

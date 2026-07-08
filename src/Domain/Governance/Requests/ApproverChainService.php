@@ -56,6 +56,18 @@ final class ApproverChainService
                 throw new \RuntimeException('Step non ancora attivo: rispetta l\'ordine della catena.');
             }
 
+            // IAM-30: separation of duties ACROSS steps. A multi-step chain exists precisely so that
+            // DISTINCT approvers sign off; the same person must not satisfy more than one step. Reject if
+            // this approver already approved an earlier step of the same request.
+            $alreadyApproved = ApprovalStep::query()
+                ->where('access_request_id', $lockedReq->id)
+                ->where('status', 'approved')
+                ->where('decided_by', $approver)
+                ->exists();
+            if ($alreadyApproved) {
+                throw new \RuntimeException('Separazione dei compiti: questo approver ha già approvato uno step della catena.');
+            }
+
             $lockedStep->forceFill([
                 'status' => 'approved',
                 'decided_by' => $approver,

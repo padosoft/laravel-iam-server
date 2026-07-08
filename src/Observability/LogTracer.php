@@ -40,9 +40,10 @@ final class LogTracer implements Tracer
 
     public function recordError(\Throwable $error, array $attributes = []): void
     {
+        // IAM-44: log the exception CLASS, never getMessage() — the message can carry secrets/PII on some
+        // paths (tokens, decrypted values). Consistent with the rest of the codebase (e.g. HttpDecider).
         $this->logger->error('iam.error', [
             'error_type' => $error::class,
-            'message' => $error->getMessage(),
         ] + $this->scalarize($attributes));
     }
 

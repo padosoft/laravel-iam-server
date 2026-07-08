@@ -42,7 +42,8 @@ final class OtlpTracer implements Tracer
 
             return $result;
         } catch (\Throwable $e) {
-            $this->record($name, $spanId, $start, $attributes + ['error_type' => $e::class], statusCode: 2, message: $e->getMessage());
+            // IAM-44: record the exception CLASS as the span status message, never getMessage() (may carry PII).
+            $this->record($name, $spanId, $start, $attributes + ['error_type' => $e::class], statusCode: 2, message: $e::class);
 
             throw $e; // never swallow a business exception
         }
@@ -64,7 +65,7 @@ final class OtlpTracer implements Tracer
             $attributes + ['error_type' => $error::class],
             statusCode: 2,
             end: $now,
-            message: $error->getMessage(),
+            message: $error::class, // IAM-44: class, not getMessage() (avoid leaking secrets/PII)
         );
     }
 

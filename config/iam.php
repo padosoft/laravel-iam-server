@@ -67,6 +67,11 @@ return [
         // Limita la finestra utile di un'assertion rubata. Il jti resta single-use fino a exp (anti-replay).
         'client_assertion_max_lifetime' => (int) env('IAM_OAUTH_CLIENT_ASSERTION_MAX_LIFETIME', 300),
         'require_pkce' => true,         // PKCE S256 obbligatorio per i client public (doc 13 §9)
+        // IAM-29: scope pubblicati su /.well-known (discovery UNAUTENTICATO), oltre agli standard OIDC.
+        // NON pubblicare il catalogo cross-tenant: elenca qui solo gli scope volutamente advertisable.
+        'advertised_scopes' => [],
+        // IAM-35: rate limit del piano OIDC (userinfo/discovery), coerente col piano OAuth.
+        'oidc_rate_limit' => env('IAM_OIDC_RATE_LIMIT', '60,1'),
         'grants' => [
             'client_credentials' => true,
             'authorization_code' => true,

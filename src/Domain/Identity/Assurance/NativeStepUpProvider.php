@@ -29,8 +29,21 @@ final class NativeStepUpProvider implements StepUpProvider
         private readonly SessionRegistry $sessions,
     ) {}
 
+    /**
+     * AAL massimo che il provider NATIVO può realmente attestare: TOTP + passkey (WebAuthn user-verifying)
+     * = AAL2. L'AAL3 (autenticatore hardware/PSD2) richiede un adapter dedicato (Rebel/FIDO2 resident key):
+     * il provider nativo NON deve mai concederlo (fail-closed).
+     */
+    private const NATIVE_MAX_AAL = Aal::AAL2;
+
     public function require(SubjectRef $subject, StepUpPurpose $purpose, SessionRef $session): StepUpChallenge
     {
+        // IAM-32: il provider nativo non può soddisfare un AAL3 → rifiuta a monte invece di emettere una
+        // challenge che poi eleverebbe falsamente a un livello non raggiunto (un passkey attesta AAL2, non AAL3).
+        if ($purpose->requiredAal->rank() > self::NATIVE_MAX_AAL->rank()) {
+            throw new \RuntimeException("Step-up AAL {$purpose->requiredAal->value} non supportato dal provider nativo (max ".self::NATIVE_MAX_AAL->value.'): serve un adapter hardware.');
+        }
+
         $expiresAt = Carbon::now()->addSeconds($this->stepUpWindow());
         $method = $purpose->requiredAal->rank() >= Aal::AAL3->rank() ? 'passkey' : 'totp';
 
@@ -77,7 +90,15 @@ final class NativeStepUpProvider implements StepUpProvider
             return new StepUpResult(false, Aal::AAL1);
         }
 
+        // IAM-32: cap l'elevazione all'AAL che il provider nativo può davvero attestare (mai oltre AAL2).
+        // Difesa in profondità: anche se una challenge AAL3 sfuggisse a require(), non eleviamo a AAL3.
+        // NOTA (da fare prima di esporre lo step-up via HTTP): legare il FATTORE verificato al method/AAL
+        // richiesto (il FactorVerifier deve ricevere method+required_aal e ritornare l'AAL raggiunto — cambio
+        // di contratto breaking) e persistere un nonce WebAuthn per-challenge in require()/verify().
         $target = Aal::fromString($challenge->required_aal);
+        if ($target->rank() > self::NATIVE_MAX_AAL->rank()) {
+            return new StepUpResult(false, Aal::AAL1);
+        }
         $session->recordStepUp($target->value);
 
         return new StepUpResult(true, $target);
