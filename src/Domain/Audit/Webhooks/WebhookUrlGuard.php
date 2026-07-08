@@ -21,7 +21,7 @@ final class WebhookUrlGuard
 
     /**
      * @param  (callable(string): list<string>)|null  $resolver  override della risoluzione DNS (test/determinismo).
-     *         Null (default, autowiring) usa gethostbynamel + dns_get_record.
+     *                                                           Null (default, autowiring) usa gethostbynamel + dns_get_record.
      */
     public function __construct(?callable $resolver = null)
     {
