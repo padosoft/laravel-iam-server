@@ -4,8 +4,13 @@ declare(strict_types=1);
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Padosoft\Iam\Contracts\Assurance\Aal;
 use Padosoft\Iam\Contracts\Crypto\TokenSigner;
+use Padosoft\Iam\Contracts\Identity\SessionMeta;
+use Padosoft\Iam\Contracts\Identity\SessionRegistry;
+use Padosoft\Iam\Contracts\Support\SubjectRef;
 use Padosoft\Iam\Domain\Identity\Models\Session;
+use Padosoft\Iam\Domain\Identity\Models\User;
 use Padosoft\Iam\Domain\OAuth\Entities\AccessTokenEntity;
 use Padosoft\Iam\Domain\OAuth\Entities\ClientEntity;
 use Padosoft\Iam\Domain\OAuth\Oidc\OidcContext;
@@ -18,9 +23,17 @@ uses(RefreshDatabase::class);
  * AAL claim is minted. Otherwise a refresh re-stamps a fresh `aal2` from a stale elevation and the Admin
  * gate (which trusts the token's `aal`) would honour a step-up far past its window — a perpetual renewal.
  * This mirrors NativeAssuranceProvider::currentAal, verified here at the token-mint seam.
- *
- * @return array<string, mixed>
  */
+function startAal2Session(): Session
+{
+    $user = new User;
+    $user->forceFill(['email' => 'u@test.local'])->save();
+    $ref = app(SessionRegistry::class)->start(new SubjectRef('user', $user->id), new SessionMeta(aal: Aal::AAL2));
+
+    return Session::query()->findOrFail($ref->id);
+}
+
+/** @return array<string, mixed> */
 function buildAccessTokenClaimsForSession(string $sid): array
 {
     $oidc = new OidcContext;
@@ -36,14 +49,14 @@ function buildAccessTokenClaimsForSession(string $sid): array
 }
 
 it('stamps the elevated AAL while the step-up is still fresh', function () {
-    $session = Session::query()->create(['user_id' => 'usr_1', 'aal' => 'aal2']);
+    $session = startAal2Session();
     $session->forceFill(['step_up_at' => Carbon::now()->subMinutes(5)])->save(); // within the 900s window
 
     expect(buildAccessTokenClaimsForSession($session->getKey())['aal'])->toBe('aal2');
 });
 
 it('downgrades a STALE step-up elevation to aal1 at mint (refresh cannot renew it forever)', function () {
-    $session = Session::query()->create(['user_id' => 'usr_1', 'aal' => 'aal2']);
+    $session = startAal2Session();
     $session->forceFill(['step_up_at' => Carbon::now()->subMinutes(30)])->save(); // past the 900s window
 
     expect(buildAccessTokenClaimsForSession($session->getKey())['aal'])->toBe('aal1');
@@ -52,14 +65,14 @@ it('downgrades a STALE step-up elevation to aal1 at mint (refresh cannot renew i
 it('never expires an initial-auth AAL2 (no step_up_at recorded)', function () {
     // aal2 with no step_up_at = the level of the INITIAL authentication (e.g. passkey login), not a
     // step-up elevation, so the freshness window does not apply.
-    $session = Session::query()->create(['user_id' => 'usr_1', 'aal' => 'aal2']);
+    $session = startAal2Session();
 
     expect(buildAccessTokenClaimsForSession($session->getKey())['aal'])->toBe('aal2');
 });
 
 it('freshness disabled (window <= 0) keeps a stale elevation', function () {
     config()->set('iam.authentication.session.step_up_freshness', 0);
-    $session = Session::query()->create(['user_id' => 'usr_1', 'aal' => 'aal2']);
+    $session = startAal2Session();
     $session->forceFill(['step_up_at' => Carbon::now()->subDays(1)])->save();
 
     expect(buildAccessTokenClaimsForSession($session->getKey())['aal'])->toBe('aal2');
