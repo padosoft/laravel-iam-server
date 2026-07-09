@@ -30,6 +30,10 @@ Access/id-token settings — lifetimes and claims for the JWTs the IdP issues.
     'rate_limit'     => 60,             // requests/min on OAuth endpoints
     'auth_code_ttl'  => 600,            // 10 minutes
     'require_pkce'   => true,           // S256 required for public clients
+    // OIDC discovery is unauthenticated — only scopes you deliberately list here are advertised on
+    // /.well-known (never the cross-tenant catalogue). Empty ⇒ only the standard OIDC scopes.
+    'advertised_scopes' => [],                              // IAM-29
+    'oidc_rate_limit'   => env('IAM_OIDC_RATE_LIMIT', '60,1'), // IAM-35: throttle for the OIDC plane (userinfo/discovery)
     'grants'         => [
         'client_credentials' => true,
         'authorization_code' => true,
@@ -47,6 +51,9 @@ Access/id-token settings — lifetimes and claims for the JWTs the IdP issues.
     'register_routes'=> true,
     'rate_limit'     => 120,            // requests/min per client + IP
     'audience'       => env('IAM_ADMIN_AUDIENCE'),  // pin token aud (fail-closed); empty = any valid IAM token
+    // Idempotency replay-store hygiene (see the iam:prune-idempotency CLI command):
+    'idempotency_retention_days' => (int) env('IAM_ADMIN_IDEMPOTENCY_RETENTION_DAYS', 7),  // prune older rows
+    'idempotency_timeout'        => (int) env('IAM_ADMIN_IDEMPOTENCY_TIMEOUT', 60),        // orphan-claim release (s)
 ],
 ```
 
@@ -68,8 +75,11 @@ secrets, refresh tokens and PII. The AWS KMS / Secrets Manager driver is enabled
 (a `suggest` dependency).
 
 ### audit
-Hash-chain and PII settings, including `ip_mode` (whether/how client IPs are stored) and export targets. See
-[Tamper-evident audit](/concepts/tamper-evident-audit).
+Hash-chain and PII settings, including `ip_mode` (whether/how client IPs are stored) and export targets. The
+optional `chain_key` (`IAM_AUDIT_CHAIN_KEY`) turns the hash-chain into an **HMAC-keyed** chain: with a secret
+kept *outside* the audit tables, a DB-write-only attacker can't recompute a forged chain. It is **opt-in** —
+left empty the chain stays plain SHA‑256 so enabling it later doesn't invalidate already-written chains
+(rotating the key requires a re-hash). See [Tamper-evident audit](/concepts/tamper-evident-audit).
 
 ### observability
 Health/readiness and the tracer: `IAM_TRACER` = `null` | `log` | `otlp` (native OTLP/HTTP push to a
@@ -138,7 +148,8 @@ in `_DAYS`. Anything omitted falls back to the safe default shown. (The deployab
 |---|---|---|
 | `IAM_SESSION_IDLE_TIMEOUT` | `1800` (30m) | Re-auth after this much inactivity. |
 | `IAM_SESSION_ABSOLUTE_TIMEOUT` | `43200` (12h) | Hard session ceiling — never extended. |
-| `IAM_SESSION_STEPUP_WINDOW` | `300` (5m) | How long a step-up (2FA) stays satisfied. |
+| `IAM_SESSION_STEPUP_WINDOW` | `300` (5m) | How long a step-up **challenge** stays valid to complete. |
+| `IAM_SESSION_STEPUP_FRESHNESS` | `900` (15m) | How long a *completed* step-up satisfies a `requires_step_up` route before it must be repeated. |
 | `IAM_SESSION_CONCURRENT_LIMIT` | — (unlimited) | Max concurrent sessions per subject. |
 | `IAM_SESSION_RETENTION_DAYS` | `90` | `iam:prune-sessions` deletes ended/expired rows older than this (**days**). |
 
@@ -150,6 +161,7 @@ in `_DAYS`. Anything omitted falls back to the safe default shown. (The deployab
 | `IAM_OAUTH_CLIENT_SECRET_WARN_DAYS` | `14` | "Expiring soon" alert threshold (**days**). |
 | `IAM_OAUTH_CLIENT_SELFFETCH` | `false` | Enable `POST /oauth/client-secret` so an auto-rotating app self-fetches its new secret during the grace. |
 | `IAM_OAUTH_CLIENT_ASSERTION_MAX_LIFETIME` | `300` | **private_key_jwt**: reject an assertion whose lifetime (exp−iat) exceeds this; `jti` is single-use. |
+| `IAM_OIDC_RATE_LIMIT` | `60,1` | Rate limit for the OIDC plane (userinfo/discovery), `maxAttempts,decayMinutes`. |
 
 ### Audit (`iam.audit.*`)
 | Variable | Default | Purpose |
@@ -157,7 +169,14 @@ in `_DAYS`. Anything omitted falls back to the safe default shown. (The deployab
 | `IAM_AUDIT_IP_MODE` | `hash` | `hash` (salted HMAC) \| `full` (readable IP for forensics; needs TrustProxies) \| `none`. |
 | `IAM_AUDIT_UA_MODE` | `hash` | Same value set for the user-agent. |
 | `IAM_AUDIT_IP_PEPPER` | — | Secret pepper for IP/UA hashing. Set in prod. |
+| `IAM_AUDIT_CHAIN_KEY` | — (plain SHA‑256) | Opt-in HMAC key for the hash-chain — keep it outside the DB so a write-only attacker can't forge the chain. Empty = unkeyed (upgrade-safe). |
 | `IAM_AUDIT_SINK` | — | Optional external SIEM sink. |
+
+### Admin API (`iam.admin.*`)
+| Variable | Default | Purpose |
+|---|---|---|
+| `IAM_ADMIN_IDEMPOTENCY_RETENTION_DAYS` | `7` | `iam:prune-idempotency` deletes replay rows older than this (**days**). |
+| `IAM_ADMIN_IDEMPOTENCY_TIMEOUT` | `60` | Seconds before an in-flight idempotency claim with no stored result is treated as orphaned and released (so retries don't stay stuck at `409`). |
 
 ### AI governance (`iam.ai.*`) & observability
 | Variable | Default | Purpose |

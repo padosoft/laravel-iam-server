@@ -90,6 +90,11 @@ return [
         // Audience attesa dell'access token admin: se valorizzata, un token con `aud` diverso è
         // rifiutato (fail-closed). Vuota = qualunque token IAM valido (utile in dev).
         'audience' => env('IAM_ADMIN_AUDIENCE'),
+        // IAM-08/IAM-41: igiene dello store di idempotency. `retention_days` = per quanto restano le righe
+        // di replay (le più vecchie le cancella `iam:prune-idempotency`). `timeout` = secondi oltre i quali
+        // un claim "in volo" senza esito è considerato orfano e rilasciato (così i retry non restano a 409).
+        'idempotency_retention_days' => (int) env('IAM_ADMIN_IDEMPOTENCY_RETENTION_DAYS', 7),
+        'idempotency_timeout' => (int) env('IAM_ADMIN_IDEMPOTENCY_TIMEOUT', 60),
     ],
 
     // M17 — Directory module (doc 19 §5). Il server possiede la CONFIG delle sorgenti (CRUD sempre
