@@ -85,3 +85,8 @@ Una review avversariale (finder + verifica) ha prodotto 38 fix server. Lezioni t
   checkpoint firmato, non solo il confronto con `iam_audit_heads` (IAM-07/12).
 - **Config wired è config testabile.** Se una chiave di config non è letta da nessun codice (require_pkce),
   non è un controllo: è un placeholder. Cablala e testala.
+- **Una finestra di sicurezza vale solo se applicata a OGNI superficie che la legge.** La freschezza dello
+  step-up (IAM-19) era enforced nel PDP/assurance (`NativeAssuranceProvider::currentAal`), ma
+  `AccessTokenClaims` stampava l'AAL grezzo della sessione nell'access token: un refresh ri-mintava un `aal2`
+  fresco da un'elevazione ormai scaduta e il gate admin (che si fida del claim) l'avrebbe onorata a oltranza.
+  Applica la stessa freschezza anche al mint del token (IAM-04/19), altrimenti il refresh è un bypass.
