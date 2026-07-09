@@ -156,11 +156,14 @@ Read-only, tenant-scoped, bounded aggregations.
 | GET | `/audit/events` |
 | POST | `/audit/verify-chain` |
 
-`verify-chain` returns `{ "data": { "valid": bool, "anchored": bool, … } }`. **`anchored`** is `true` only
-when the chain head is backed by a valid ES256-signed checkpoint — the one artifact a DB-write insider can't
-forge. `valid && !anchored` means the chain is internally consistent but not yet checkpoint-anchored; auditors
-should require `anchored: true` for strong assurance. See [Tamper-evident audit](/concepts/tamper-evident-audit).
-A tenant-scoped caller may only verify their own stream (cross-tenant → **404**).
+`verify-chain` returns `{ "data": { "valid": bool, "anchored": bool, … } }`. **`anchored`** is `true` when a
+valid ES256-signed checkpoint anchors the chain up to its sealed sequence — a signature a DB-write insider
+can't forge. It attests the chain **up to the latest checkpoint**, not necessarily the current head: events
+appended after that checkpoint are consistency-checked (against `iam_audit_heads`) but are not themselves
+signed. For strong head assurance, run `iam:audit:checkpoint` to re-anchor the head, and/or set `chain_key`
+so the tail is HMAC-protected too. `valid && !anchored` means internally consistent but resting on the
+writable DB alone. See [Tamper-evident audit](/concepts/tamper-evident-audit). A tenant-scoped caller may only
+verify their own stream (cross-tenant → **404**).
 
 ::: callout tip "The contract can't drift" icon:check-check
 `OpenApiSpecTest` compares `Router::getRoutes()` against `resources/openapi.yaml` and fails the build if any

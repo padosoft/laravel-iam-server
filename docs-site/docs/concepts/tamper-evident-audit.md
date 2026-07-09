@@ -57,10 +57,13 @@ verification is cheaper.
 The verify response carries **two** booleans, not one:
 
 - **`valid`** — the chain recomputes cleanly (no tampered/reordered/deleted rows).
-- **`anchored`** — the head is backed by a valid ES256-signed checkpoint. A signature is the one artifact a
-  DB-write insider can't forge, so `anchored: true` is the strong guarantee. `valid && !anchored` is honest:
-  internally consistent, but resting on the writable DB alone (no checkpoint yet). For compliance evidence,
-  require `anchored: true` — schedule `iam:audit:checkpoint` so a fresh signature always anchors the head.
+- **`anchored`** — a valid ES256-signed checkpoint anchors the chain **up to its sealed sequence**. A
+  signature is the one artifact a DB-write insider can't forge. Note the boundary: `anchored: true` attests
+  everything up to the *latest checkpoint*, not necessarily the current head — events appended after it are
+  consistency-checked (against `iam_audit_heads`) but not themselves signed, so an insider could still forge
+  *uncheckpointed tail* events unless the HMAC `chain_key` is set. `valid && !anchored` is honest: internally
+  consistent, but resting on the writable DB alone. For compliance evidence, schedule `iam:audit:checkpoint`
+  frequently so a fresh signature keeps re-anchoring the head, and set `chain_key` to protect the tail too.
 
 ## PII, GDPR & the chain
 

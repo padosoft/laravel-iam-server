@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Padosoft\Iam\Domain\OAuth\Token;
 
 use League\OAuth2\Server\Entities\ScopeEntityInterface;
+use Padosoft\Iam\Contracts\Assurance\Aal;
 use Padosoft\Iam\Domain\Identity\Models\Session;
 use Padosoft\Iam\Domain\OAuth\Entities\AccessTokenEntity;
 use Padosoft\Iam\Domain\OAuth\Entities\ClientEntity;
@@ -56,14 +57,50 @@ final class AccessTokenClaims
             // IAM-04: porta l'AAL della sessione NELL'ACCESS TOKEN. acr/amr stanno sull'id_token, ma
             // l'enforcement server-side (Admin gate → step-up) legge l'AAL dall'access token: senza questo
             // claim un attore che ha fatto step-up varrebbe comunque aal1 e ogni rotta requires_step_up
-            // resterebbe bloccata. Dopo uno step-up + refresh il token è ri-mintato con l'AAL aggiornato.
-            $aal = Session::query()->whereKey($sid)->value('aal');
-            if (is_string($aal) && $aal !== '') {
-                $claims['aal'] = $aal;
+            // resterebbe bloccata.
+            // IAM-19: applica QUI la finestra di FRESHNESS dello step-up. Senza, un refresh ri-minterebbe un
+            // aal2 fresco da un'elevazione ormai scaduta e il gate (che si fida del claim) onorerebbe uno
+            // step-up ben oltre la sua finestra: il refresh diventerebbe un rinnovo perpetuo dell'AAL elevato.
+            $session = Session::query()->whereKey($sid)->first();
+            if ($session !== null) {
+                $claims['aal'] = $this->effectiveAal($session);
             }
         }
 
         return $claims;
+    }
+
+    /**
+     * AAL effettivo da stampare: il livello della sessione, declassato ad AAL1 se un'elevazione via step-up
+     * è scaduta (IAM-19). Allineato a {@see NativeAssuranceProvider::currentAal}.
+     */
+    private function effectiveAal(Session $session): string
+    {
+        $level = Aal::fromString($session->aal);
+        if ($level->rank() > Aal::AAL1->rank() && !$this->stepUpFresh($session)) {
+            return Aal::AAL1->value;
+        }
+
+        return $level->value;
+    }
+
+    /**
+     * IAM-19 freshness, coerente con {@see NativeAssuranceProvider::stepUpFresh}: `step_up_at` nullo =
+     * livello di autenticazione INIZIALE (non un'elevazione) → non scade. Finestra <= 0 = freschezza off.
+     */
+    private function stepUpFresh(Session $session): bool
+    {
+        $stepUpAt = $session->step_up_at;
+        if ($stepUpAt === null) {
+            return true;
+        }
+        $window = config('iam.authentication.session.step_up_freshness', 900);
+        $window = is_numeric($window) ? (int) $window : 900;
+        if ($window <= 0) {
+            return true;
+        }
+
+        return abs($stepUpAt->diffInSeconds(now())) <= $window;
     }
 
     /** Allineato a NativeSqlEngine::policyVersion (doc 09 §6): consistency token per-org. */

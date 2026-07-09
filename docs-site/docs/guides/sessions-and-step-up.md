@@ -71,15 +71,18 @@ sequenceDiagram
 ```
 
 Step-up challenges are tracked in `iam_step_up_challenges`; passkeys (the `laravel/passkeys` suggest
-dependency) satisfy AAL2. The native step-up provider caps at **AAL2** — an `requiredAal` of AAL3 is rejected
+dependency) satisfy AAL2. The native step-up provider caps at **AAL2** — a `requiredAal` of `aal3` is rejected
 up front, since a passkey/TOTP can't attest a hardware authenticator (that needs a dedicated adapter).
 
 **Enforcement on the Admin API.** A `requires_step_up` admin route doesn't just advise — the `iam.can`
 middleware turns an insufficient AAL into a `403` [`step-up-required`](/reference/admin-api#errors-rfc-9457)
 problem (carrying `required_aal`), distinct from a plain `forbidden` denial. The actor's AAL is read from the
 **access token**: after a step-up the session's AAL is elevated and, on the next token refresh, the freshly
-minted access token carries the new `aal` claim (bound to the session `sid`) — so the same operator now passes
-the gate. A completed step-up only counts while it is *fresh* (`IAM_SESSION_STEPUP_FRESHNESS`, default 15m).
+minted access token carries the `aal` claim (bound to the session `sid`) — so the same operator now passes the
+gate. The freshness window (`IAM_SESSION_STEPUP_FRESHNESS`, default 15m) is applied **both** by the live PDP /
+assurance evaluation *and* when the access token's `aal` is stamped: an elevation past its window is minted as
+`aal1`, so a refresh can't re-stamp a fresh `aal2` from a stale step-up. (An `aal2` from the *initial* login —
+no recorded `step_up_at` — is not a step-up elevation and doesn't expire.)
 
 ::: callout warning "Step-up is not a one-time flag" icon:timer
 Elevated assurance is bound to the session and subject to the same timeouts. A long-idle session can drop

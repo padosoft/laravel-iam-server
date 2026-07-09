@@ -83,6 +83,7 @@ php artisan vendor:publish --tag="laravel-iam-server-config"
 | `IAM_SESSION_STEPUP_FRESHNESS` | How long a completed step-up satisfies a `requires_step_up` route (s, default 900) |
 | `IAM_OIDC_RATE_LIMIT` | Throttle for the OIDC plane, `maxAttempts,decayMinutes` (default `60,1`) |
 | `IAM_ADMIN_IDEMPOTENCY_RETENTION_DAYS` | Retention for `iam:prune-idempotency` (days, default 7) |
+| `IAM_ADMIN_IDEMPOTENCY_TIMEOUT` | Orphan-claim release for in-flight idempotency keys (seconds, default 60) |
 
 ## Next
 
