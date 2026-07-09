@@ -71,7 +71,18 @@ sequenceDiagram
 ```
 
 Step-up challenges are tracked in `iam_step_up_challenges`; passkeys (the `laravel/passkeys` suggest
-dependency) satisfy AAL2.
+dependency) satisfy AAL2. The native step-up provider caps at **AAL2** — a `requiredAal` of `aal3` is rejected
+up front, since a passkey/TOTP can't attest a hardware authenticator (that needs a dedicated adapter).
+
+**Enforcement on the Admin API.** A `requires_step_up` admin route doesn't just advise — the `iam.can`
+middleware turns an insufficient AAL into a `403` [`step-up-required`](/reference/admin-api#errors-rfc-9457)
+problem (carrying `required_aal`), distinct from a plain `forbidden` denial. The actor's AAL is read from the
+**access token**: after a step-up the session's AAL is elevated and, on the next token refresh, the freshly
+minted access token carries the `aal` claim (bound to the session `sid`) — so the same operator now passes the
+gate. The freshness window (`IAM_SESSION_STEPUP_FRESHNESS`, default 15m) is applied **both** by the live PDP /
+assurance evaluation *and* when the access token's `aal` is stamped: an elevation past its window is minted as
+`aal1`, so a refresh can't re-stamp a fresh `aal2` from a stale step-up. (An `aal2` from the *initial* login —
+no recorded `step_up_at` — is not a step-up elevation and doesn't expire.)
 
 ::: callout warning "Step-up is not a one-time flag" icon:timer
 Elevated assurance is bound to the session and subject to the same timeouts. A long-idle session can drop
@@ -99,7 +110,8 @@ ceiling. The timeouts are configurable (`iam.authentication.session.*`), env-dri
 |---|---|---|---|
 | idle timeout | `IAM_SESSION_IDLE_TIMEOUT` | `1800` (30m) | Re-auth after this much inactivity. |
 | absolute timeout | `IAM_SESSION_ABSOLUTE_TIMEOUT` | `43200` (12h) | Hard ceiling — **never extended**. |
-| step-up window | `IAM_SESSION_STEPUP_WINDOW` | `300` (5m) | How long a step-up stays satisfied. |
+| step-up window | `IAM_SESSION_STEPUP_WINDOW` | `300` (5m) | How long a step-up **challenge** stays valid to complete. |
+| step-up freshness | `IAM_SESSION_STEPUP_FRESHNESS` | `900` (15m) | How long a *completed* step-up keeps satisfying a `requires_step_up` route before it must be repeated. |
 | concurrent limit | `IAM_SESSION_CONCURRENT_LIMIT` | unlimited | Max concurrent sessions per subject. |
 | retention | `IAM_SESSION_RETENTION_DAYS` | `90` | Days before ended/expired rows are pruned. |
 

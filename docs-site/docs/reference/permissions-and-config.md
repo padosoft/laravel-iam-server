@@ -79,6 +79,11 @@ php artisan vendor:publish --tag="laravel-iam-server-config"
 | `IAM_OAUTH_ENCRYPTION_KEY` | base64 32-byte OAuth code/refresh key |
 | `IAM_ADMIN_AUDIENCE` | Expected `aud` of admin tokens (fail-closed) |
 | `IAM_DIRECTORY_ENABLED` | Enable directory sync/test triggers |
+| `IAM_AUDIT_CHAIN_KEY` | Opt-in HMAC key for the audit hash-chain (empty = plain SHA‑256) |
+| `IAM_SESSION_STEPUP_FRESHNESS` | How long a completed step-up satisfies a `requires_step_up` route (s, default 900) |
+| `IAM_OIDC_RATE_LIMIT` | Throttle for the OIDC plane, `maxAttempts,decayMinutes` (default `60,1`) |
+| `IAM_ADMIN_IDEMPOTENCY_RETENTION_DAYS` | Retention for `iam:prune-idempotency` (days, default 7) |
+| `IAM_ADMIN_IDEMPOTENCY_TIMEOUT` | Orphan-claim release for in-flight idempotency keys (seconds, default 60) |
 
 ## Next
 

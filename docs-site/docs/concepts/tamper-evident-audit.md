@@ -29,10 +29,18 @@ flowchart LR
 
 | Class | Role |
 |---|---|
-| `AuditHasher` | Computes the per-event hash. |
+| `AuditHasher` | Computes the per-event hash — plain SHA‑256, or **HMAC‑SHA256** when a key is configured. |
 | `AuditChainAppender` | Appends an event, linking it to the prior hash. |
 | `AuditChainVerifier` | Walks the chain and reports any break (`AuditVerificationResult`). |
-| `AuditCheckpointer` | Periodic checkpoints so verification doesn't always start from genesis. |
+| `AuditCheckpointer` | Periodic **ES256-signed** checkpoints that both speed up verification and *anchor* the head. |
+
+### Keyed chain (defence against a DB-write insider)
+
+Plain SHA‑256 detects out-of-band edits, but an attacker who can *write* the audit table could recompute a
+consistent forged chain. Set `iam.audit.chain_key` (`IAM_AUDIT_CHAIN_KEY`) to switch the hash to
+**HMAC‑SHA256** with a secret kept outside the tables — now the chain can't be recomputed without the key.
+It is **opt-in**: left empty the chain stays unkeyed, so turning it on later doesn't invalidate chains already
+written (rotating the key requires a re-hash). Keep the key in a KMS/secret store in production.
 
 ## Verifying
 
@@ -45,6 +53,17 @@ php artisan iam:audit:verify --stream=global
 A break means a row was altered or deleted out of band — the log is **tamper-evident**, not merely
 append-only. Checkpoints (`php artisan iam:audit:checkpoint`) seal a stream up to a point so future
 verification is cheaper.
+
+The verify response carries **two** booleans, not one:
+
+- **`valid`** — the chain recomputes cleanly (no tampered/reordered/deleted rows).
+- **`anchored`** — a valid ES256-signed checkpoint anchors the chain **up to its sealed sequence**. A
+  signature is the one artifact a DB-write insider can't forge. Note the boundary: `anchored: true` attests
+  everything up to the *latest checkpoint*, not necessarily the current head — events appended after it are
+  consistency-checked (against `iam_audit_heads`) but not themselves signed, so an insider could still forge
+  *uncheckpointed tail* events unless the HMAC `chain_key` is set. `valid && !anchored` is honest: internally
+  consistent, but resting on the writable DB alone. For compliance evidence, schedule `iam:audit:checkpoint`
+  frequently so a fresh signature keeps re-anchoring the head, and set `chain_key` to protect the tail too.
 
 ## PII, GDPR & the chain
 

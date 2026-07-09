@@ -87,6 +87,21 @@ See [Application credentials & lifecycle](/guides/application-credentials) and
 
 See [Sessions & step-up](/guides/sessions-and-step-up).
 
+## Idempotency store
+
+| Command | What it does |
+|---|---|
+| `iam:prune-idempotency {--days=}` | Delete `iam_idempotency_keys` rows older than the retention window (`iam.admin.idempotency_retention_days`, default **7**; override with `--days=`). The replay store has no natural expiry, so without a prune it grows unbounded — schedule this daily. |
+
+```bash
+php artisan iam:prune-idempotency            # retention from config (default 7 days)
+php artisan iam:prune-idempotency --days=3   # override
+```
+
+The stored response body is encrypted at rest (`Crypt` / `APP_KEY`) so the table is never a recoverable
+cleartext credential store, but pruning keeps it bounded regardless. See
+[Securing the Admin API](/best-practices/securing-admin-api).
+
 ## Scheduling
 
 Wire the maintenance commands into Laravel's scheduler (see [Deployment](/operations/deployment)):
@@ -98,6 +113,7 @@ $schedule->command('iam:least-privilege:scan')->daily();
 $schedule->command('iam:reviews:remind')->dailyAt('09:00');
 $schedule->command('iam:rotate-due-secrets')->daily();   // OAuth secret auto-rotation
 $schedule->command('iam:prune-sessions')->daily();       // session expiry sweep + retention
+$schedule->command('iam:prune-idempotency')->daily();    // idempotency replay-store retention
 ```
 
 ::: callout tip "CI-friendly manifests" icon:terminal

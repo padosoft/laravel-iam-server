@@ -43,6 +43,14 @@ curl -X POST https://iam.example.com/api/iam/v1/webhooks/{subscription}/test -H 
 Subscribers verify the signature using the shared secret — the same model the
 [`laravel-iam-client`](https://doc.laravel-iam-client.padosoft.com) webhook receiver implements.
 
+::: callout warning "Webhook targets are SSRF-guarded" icon:shield
+A webhook URL is attacker-influenced data, so the server won't let it reach your internal network.
+`WebhookUrlGuard` requires `https`, **resolves the host and rejects the request if *any* resolved address is
+private, loopback, link-local or a cloud metadata endpoint** (169.254.169.254), and the sender then **pins the
+connection to the validated IP** (`CURLOPT_RESOLVE`) so a DNS entry that passes validation can't be rebound to
+an internal address before the request fires. Point webhooks at public HTTPS endpoints only.
+:::
+
 ## Inspecting & replaying deliveries
 
 Every delivery attempt is recorded. Failed deliveries land in a dead-letter queue you can replay:

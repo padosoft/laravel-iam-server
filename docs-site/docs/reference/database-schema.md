@@ -33,6 +33,7 @@ indexes; this page lists them by feature. The grouped view is in the [Data model
 | 18 | `create_iam_groups_tables` | groups + membership (writes the `member` tuple) |
 | 19 | `create_iam_directory_sources` | directory-source configuration |
 | 20 | `create_iam_approval_steps` | approver-chain steps for access requests |
+| 21 | `add_session_to_oauth_token_chains` | binds refresh-token chains to the session (`sid`/`acr`/`amr`): a refresh is denied once the session is revoked, and `sid`/`acr`/`amr` are re-stamped on rotated access tokens so the session↔token binding survives rotation |
 
 ## By subsystem
 

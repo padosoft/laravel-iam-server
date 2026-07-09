@@ -18,6 +18,31 @@ enforced against the registered routes by `OpenApiSpecTest`.
 - **Errors** — RFC 9457 problem-details; cross-tenant access returns **404**.
 - **Secrets** — write-only (encrypted, never returned).
 
+## Errors (RFC 9457)
+
+Errors are `application/problem+json` with a stable `type` URI, plus `title`, `status`, `detail` and a
+`correlation_id` (echoed from `Correlation-Id`). Validation errors add an `errors` map.
+
+| Status | `type` | When |
+|---|---|---|
+| 401 | `https://iam/problems/unauthorized` | Missing/invalid bearer token. |
+| 403 | `https://iam/problems/forbidden` | PDP denied (fail-closed). |
+| 403 | `https://iam/problems/step-up-required` | Permitted **but** the actor's AAL is too low. Carries a `required_aal` extension member (e.g. `"aal2"`) so the client can start a [step-up](/guides/sessions-and-step-up); it is *not* a denial. |
+| 404 | `https://iam/problems/not-found` | Absent **or** cross-tenant (isolation is indistinguishable from "does not exist"). |
+| 409 | `https://iam/problems/conflict` | Idempotency claim in flight, or a state-transition race. |
+| 422 | `https://iam/problems/validation` | Malformed body; `errors` maps field → messages. |
+
+```json
+{
+  "type": "https://iam/problems/step-up-required",
+  "title": "Step-up required",
+  "status": 403,
+  "detail": "Questa operazione richiede un livello di autenticazione aal2: ripeti l'autenticazione (step-up).",
+  "correlation_id": "…",
+  "required_aal": "aal2"
+}
+```
+
 ## Health *(unauthenticated)*
 
 | Method | Path |
@@ -33,6 +58,10 @@ enforced against the registered routes by `OpenApiSpecTest`.
 | POST | `/users/{user}/suspend` · `/users/{user}/reactivate` · `/users/{user}/sessions/revoke-all` |
 | GET | `/sessions` · `/sessions/{session}` |
 | POST | `/sessions/{session}/revoke` |
+
+Suspending a user does more than flip a flag: it revokes every server-side session **and** the user's live
+OAuth access/refresh tokens (`SubjectRevoker`), so access is cut immediately rather than lingering until token
+expiry. The PDP also denies any subject whose account is not active.
 
 ## Decisions & relations (PDP)
 
@@ -126,6 +155,15 @@ Read-only, tenant-scoped, bounded aggregations.
 |---|---|
 | GET | `/audit/events` |
 | POST | `/audit/verify-chain` |
+
+`verify-chain` returns `{ "data": { "valid": bool, "anchored": bool, … } }`. **`anchored`** is `true` when a
+valid ES256-signed checkpoint anchors the chain up to its sealed sequence — a signature a DB-write insider
+can't forge. It attests the chain **up to the latest checkpoint**, not necessarily the current head: events
+appended after that checkpoint are consistency-checked (against `iam_audit_heads`) but are not themselves
+signed. For strong head assurance, run `iam:audit:checkpoint` to re-anchor the head, and/or set `chain_key`
+so the tail is HMAC-protected too. `valid && !anchored` means internally consistent but resting on the
+writable DB alone. See [Tamper-evident audit](/concepts/tamper-evident-audit). A tenant-scoped caller may only
+verify their own stream (cross-tenant → **404**).
 
 ::: callout tip "The contract can't drift" icon:check-check
 `OpenApiSpecTest` compares `Router::getRoutes()` against `resources/openapi.yaml` and fails the build if any
