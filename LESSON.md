@@ -38,6 +38,12 @@
   rallentano/ rompono install e CI. Il core resta usabile senza; l'adapter reale è opzionale e, se non
   installabile in dev, va isolato (sottospazio + `excludePaths` PHPStan).
 - **Commit message via file** se l'here-string fallisce su Windows: scrivere su file e `git commit -F`.
+- **Dependabot bloccato su vulnerabilità transitive npm → `overrides`.** Se il parent pinna la versione
+  vulnerabile (es. `@huggingface/transformers` → `sharp@^0.34`, `onnxruntime-node` → `adm-zip@^0.5`) e
+  nessun bump del parent è disponibile, Dependabot non apre PR ("conflicting dependencies"). Fix: campo
+  `overrides` nel `package.json` (es. `docs-site/`) + `npm install` per rigenerare il lock; poi verificare
+  con `npm ls <pkg>` (tutte le occorrenze deduped sulla versione patchata), `npm audit` a zero, e il gate
+  del sito (`npm run check` + `npm run build`), perché sharp/onnxruntime sono moduli nativi usati in build.
 
 ## Specifiche di questo package (laravel-iam-server)
 
