@@ -96,3 +96,22 @@ Una review avversariale (finder + verifica) ha prodotto 38 fix server. Lezioni t
   `AccessTokenClaims` stampava l'AAL grezzo della sessione nell'access token: un refresh ri-mintava un `aal2`
   fresco da un'elevazione ormai scaduta e il gate admin (che si fida del claim) l'avrebbe onorata a oltranza.
   Applica la stessa freschezza anche al mint del token (IAM-04/19), altrimenti il refresh è un bypass.
+
+## Delegation P1+P3 (task/delegation-core-p1-p3, 2026-08-23)
+
+- **`TokenIssuanceContext`** (Domain/OAuth/Token): canale request-scoped con cui un grant deposita
+  claim/header AGGIUNTIVI nell'access token in emissione — nato per il grant token-exchange (RFC 8693)
+  del modulo `-agents` (`act`, `pds_dgr`, audience override, header `typ`). Stesso pattern
+  reset-per-request di OidcContext/ClientAssertionContext (reset nel TokenController, Octane-safe).
+  Chiavi riservate NON impostabili (fail-closed con throw, non skip silenzioso): un modulo non può
+  sovrascrivere sub/iss/scope/sid/… nemmeno per errore. I `final` esistenti (AccessTokenClaims,
+  AccessTokenRepository) NON sono stati aperti: il contesto entra come dipendenza opzionale.
+- **`app.type = agent`** nel manifest: SOLO grant `urn:ietf:params:oauth:grant-type:token-exchange`
+  (niente auth-code: un agente non fa login interattivo; niente refresh: i token delegati si
+  RI-SCAMBIANO, ed è il check di freshness della revoca). Richiede `private_key_jwt` (validator
+  fail-closed a monte: nessun shared secret per gli agenti).
+- **Tooling senza api.github.com** (proxy 403 sui dist): `composer.lock` del repo non è tracciato;
+  `phpstan/phpstan` è DIST-ONLY su packagist (nessun campo source) → iniettare temporaneamente
+  `source: git` nell'entry del lock locale fa passare `--prefer-source`; in alternativa riempire
+  vendor/phpstan/phpstan dal clone git del repo phar + symlink vendor/bin/phpstan. Pest richiede
+  `COMPOSER_ALLOW_SUPERUSER=1` (plugin composer disabilitati come root).

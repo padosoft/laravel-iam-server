@@ -49,6 +49,7 @@ use Padosoft\Iam\Domain\OAuth\Repositories\ClientRepository;
 use Padosoft\Iam\Domain\OAuth\Repositories\RefreshTokenRepository;
 use Padosoft\Iam\Domain\OAuth\Repositories\ScopeRepository;
 use Padosoft\Iam\Domain\OAuth\Token\LocalTokenSigner;
+use Padosoft\Iam\Domain\OAuth\Token\TokenIssuanceContext;
 use Padosoft\Iam\Http\Admin\Middleware\AdminAuthenticate;
 use Padosoft\Iam\Http\Admin\Middleware\AuthorizeIamPermission;
 use Padosoft\Iam\Http\Admin\Middleware\IdempotencyKey;
@@ -159,11 +160,17 @@ final class IamServiceProvider extends PackageServiceProvider
         $this->app->singleton(KeyProvider::class, fn (): LocalKeyProvider => new LocalKeyProvider($this->resolveKek()));
         $this->app->singleton(SecretCipher::class, fn (): LocalSecretCipher => new LocalSecretCipher($this->app->make(KeyProvider::class)));
 
+        // TokenIssuanceContext: canale request-scoped per claim/header aggiuntivi del token in
+        // emissione (delega RFC 8693, modulo -agents). Singleton condiviso tra il signer, il
+        // claims builder e il TokenController (che lo resetta a ogni richiesta token).
+        $this->app->singleton(TokenIssuanceContext::class);
+
         // M4: firma JWT (TokenSigner ES256).
         $this->app->singleton(TokenSigner::class, fn (): LocalTokenSigner => new LocalTokenSigner(
             $this->app->make(KeyProvider::class),
             $this->resolveIssuer(),
             $this->resolveOpensslConfig(),
+            $this->app->make(TokenIssuanceContext::class),
         ));
 
         // M4b: motore OAuth (league). I repository sono auto-risolti (TokenSigner è bound sopra).

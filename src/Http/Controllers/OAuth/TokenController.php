@@ -11,6 +11,7 @@ use Padosoft\Iam\Domain\OAuth\ClientAssertionContext;
 use Padosoft\Iam\Domain\OAuth\ClientAssertionVerifier;
 use Padosoft\Iam\Domain\OAuth\Oidc\OidcContext;
 use Padosoft\Iam\Domain\OAuth\Repositories\RefreshTokenRepository;
+use Padosoft\Iam\Domain\OAuth\Token\TokenIssuanceContext;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -30,6 +31,7 @@ final class TokenController
         private readonly OidcContext $oidc,
         private readonly ClientAssertionVerifier $assertions,
         private readonly ClientAssertionContext $assertionContext,
+        private readonly TokenIssuanceContext $issuance,
     ) {}
 
     public function token(Request $request): Response
@@ -40,6 +42,7 @@ final class TokenController
         $this->refreshTokens->resetPendingChain();
         $this->oidc->reset();
         $this->assertionContext->reset();
+        $this->issuance->reset();
 
         // private_key_jwt (RFC 7523): authenticate the client by its SIGNED ASSERTION before league runs the
         // grant. On success we stash the proven client_id (ClientRepository::validateClient reads it) and hand

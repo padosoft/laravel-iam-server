@@ -13,8 +13,11 @@ final class ManifestValidator
 {
     private const RISK = ['low', 'medium', 'high', 'critical'];
 
-    /** Tipi di app riconosciuti: `service` → client_credentials, gli altri → authorization_code (doc 01 §10). */
-    private const APP_TYPES = ['laravel', 'spa', 'mobile', 'service'];
+    /**
+     * Tipi di app riconosciuti: `service` → client_credentials, `agent` → token-exchange
+     * (RFC 8693, delega AI agents — modulo -agents), gli altri → authorization_code (doc 01 §10).
+     */
+    private const APP_TYPES = ['laravel', 'spa', 'mobile', 'service', 'agent'];
 
     // IAM-33: cap di dimensione. Un manifest è applicato in UNA transazione con un upsert per elemento:
     // senza limiti un payload enorme è un vettore di resource-exhaustion. Rifiutato come invalido a monte.
@@ -50,7 +53,7 @@ final class ManifestValidator
         // Tipo opzionale (default applier = laravel), ma se presente DEVE essere noto: un typo come
         // "servcie" non deve passare e ricevere silenziosamente i grant sbagliati (fail-closed).
         if (array_key_exists('type', $app) && !in_array($app['type'], self::APP_TYPES, true)) {
-            $errors[] = 'app.type non valido (laravel|spa|mobile|service)';
+            $errors[] = 'app.type non valido (laravel|spa|mobile|service|agent)';
         }
         if (!in_array($app['risk_level'] ?? 'low', self::RISK, true)) {
             $errors[] = 'app.risk_level non valido (low|medium|high|critical)';
@@ -59,6 +62,11 @@ final class ManifestValidator
         $auth = $this->arr($manifest['auth'] ?? null);
         if (!in_array($auth['client_type'] ?? 'confidential', ['confidential', 'public'], true)) {
             $errors[] = 'auth.client_type non valido (confidential|public)';
+        }
+        // Delega AI agents: un'app `agent` autentica SOLO via private_key_jwt (RFC 7523) —
+        // nessun shared secret per gli agenti. Fail-closed a monte (qui), non solo nell'applier.
+        if (($app['type'] ?? null) === 'agent' && ($auth['token_endpoint_auth_method'] ?? null) !== 'private_key_jwt') {
+            $errors[] = 'app.type "agent" richiede auth.token_endpoint_auth_method = private_key_jwt';
         }
         $redirects = $this->arr($auth['redirect_uris'] ?? null);
         if (count($redirects) > self::MAX_REDIRECT_URIS) {
