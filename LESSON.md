@@ -115,3 +115,22 @@ Una review avversariale (finder + verifica) ha prodotto 38 fix server. Lezioni t
   `source: git` nell'entry del lock locale fa passare `--prefer-source`; in alternativa riempire
   vendor/phpstan/phpstan dal clone git del repo phar + symlink vendor/bin/phpstan. Pest richiede
   `COMPOSER_ALLOW_SUPERUSER=1` (plugin composer disabilitati come root).
+
+## 2026-08-23 — P2 (push webhook) + P4 (/capabilities)
+
+- **Il container Laravel NON risolve le dipendenze nullable-con-default**: `?AuditEventPusher
+  $pusher = null` su AuditRecorder/OutboxProcessor resta null via `app()` finché il provider non
+  registra un bind esplicito che lo costruisce. Il push P2 sarebbe rimasto silenziosamente spento —
+  pattern: param opzionale (i `new` diretti nei test restano validi) + bind esplicito nel provider.
+- **Push webhook = best-effort, MAI nel percorso della mutazione**: AuditEventPusher assorbe ogni
+  Throwable (tabelle webhook non migrate incluse) con report(); in OutboxProcessor il push avviene
+  DOPO il commit della transazione di sigillatura (niente HTTP in transazione DB).
+- **Attivare il push rompe i test che contano le HTTP-send con subscription `'*'`**: gli eventi di
+  audit admin (iam.webhook.created/…) ora vengono consegnati anch'essi. I test che isolano un altro
+  canale di consegna (test-delivery) disattivano `iam.audit.webhooks.push_enabled` in setup.
+- **Ogni rotta admin nuova DEVE entrare in resources/openapi.yaml**: OpenApiSpecTest confronta il
+  router con la spec (path+metodo) e fallisce sul delta — /capabilities incluso.
+- **LogoutTokenIssuer resta NON cablato di proposito**: la consegna OIDC back-channel logout
+  richiede metadata di registrazione client (`backchannel_logout_uri`) che non esiste ancora;
+  il push di revoca verso PEP/agent passa dal canale webhook (evento di audit della revoca), che è
+  ciò che serve alla delega. Cablare il logout_token è un lavoro a sé con la colonna client.

@@ -130,6 +130,17 @@ return [
         // scritte. In prod: chiave dedicata in un KMS/secret store (ruotarla richiede un re-hash della catena).
         'chain_key' => env('IAM_AUDIT_CHAIN_KEY'),
         'export' => ['format' => 'ocsf', 'sink' => env('IAM_AUDIT_SINK')], // ELK/SIEM
+        // P2 — Push webhook degli eventi sigillati (doc 12 §6). Se attivo, ogni evento appena
+        // sigillato nella hash-chain viene consegnato alle subscription attive che lo matchano.
+        // Best-effort: un errore di consegna non fa MAI fallire l'operazione sorgente (l'evento è
+        // già in catena); i tentativi falliti li riprende `iam:webhooks-retry`. È il canale push
+        // con cui revoche di sessione/grant e lo stream `delegation` raggiungono PEP e agent.
+        'webhooks' => [
+            'push_enabled' => env('IAM_AUDIT_WEBHOOKS_PUSH', true),
+        ],
+        // Oltre questo timeout (secondi) una delivery rimasta in 'sending' (worker morto dopo il
+        // claim) viene riportata a 'retrying' dal retrier.
+        'webhook_sending_timeout' => (int) env('IAM_AUDIT_WEBHOOK_SENDING_TIMEOUT', 300),
     ],
 
     // M14 — Observability / deploy base. Tracer: null (default, zero deps) | log (span/errori →
