@@ -55,6 +55,12 @@ final class TokenIssuanceContext
     /** @var array<string, mixed> */
     private array $extra = [];
 
+    /** Parametri EXTRA di risposta ammessi (RFC 8693 §2.2: issued_token_type obbligatorio, scope se differisce). */
+    private const ALLOWED_RESPONSE_PARAMS = ['issued_token_type', 'scope'];
+
+    /** @var array<string, string> */
+    private array $responseParams = [];
+
     /**
      * Deposita l'attore della delega (claim `act` già annidato) e la grant che la autorizza.
      *
@@ -113,6 +119,31 @@ final class TokenIssuanceContext
     }
 
     /**
+     * Parametri aggiuntivi della RISPOSTA token (non del JWT): allow-list stretta
+     * (`issued_token_type`, `scope` — RFC 8693 §2.2). Tutto il resto è rifiutato.
+     *
+     * @param  array<string, string>  $params
+     */
+    public function setResponseParams(array $params): void
+    {
+        foreach ($params as $name => $value) {
+            if (!in_array($name, self::ALLOWED_RESPONSE_PARAMS, true)) {
+                throw new \InvalidArgumentException("Parametro di risposta \"{$name}\" non ammesso via TokenIssuanceContext.");
+            }
+            if (!is_string($value)) {
+                throw new \InvalidArgumentException("Parametro di risposta \"{$name}\" deve essere stringa.");
+            }
+        }
+        $this->responseParams = $params;
+    }
+
+    /** @return array<string, string> */
+    public function responseParams(): array
+    {
+        return $this->responseParams;
+    }
+
+    /**
      * Applica il contesto ai claim costruiti da AccessTokenClaims. Doppia guardia:
      * i setter validano all'ingresso, qui gli extra vengono comunque filtrati.
      *
@@ -146,5 +177,6 @@ final class TokenIssuanceContext
         $this->audience = [];
         $this->typ = null;
         $this->extra = [];
+        $this->responseParams = [];
     }
 }

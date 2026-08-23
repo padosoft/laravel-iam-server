@@ -83,3 +83,21 @@ it('l\'actor claim vuoto è rifiutato', function () {
     expect(fn () => issuance()->setActor([]))
         ->toThrow(InvalidArgumentException::class);
 });
+
+it('setResponseParams accetta solo issued_token_type e scope (RFC 8693 §2.2)', function () {
+    $ctx = issuance();
+    $ctx->setResponseParams(['issued_token_type' => 'urn:ietf:params:oauth:token-type:access_token', 'scope' => 'orders:read']);
+
+    expect($ctx->responseParams())->toHaveKeys(['issued_token_type', 'scope']);
+
+    expect(fn () => issuance()->setResponseParams(['access_token' => 'x']))
+        ->toThrow(InvalidArgumentException::class);
+});
+
+it('reset azzera anche i response params', function () {
+    $ctx = issuance();
+    $ctx->setResponseParams(['scope' => 'orders:read']);
+    $ctx->reset();
+
+    expect($ctx->responseParams())->toBe([]);
+});

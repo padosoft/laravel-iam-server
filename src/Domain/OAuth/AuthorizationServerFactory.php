@@ -19,6 +19,7 @@ use Padosoft\Iam\Domain\OAuth\Repositories\ClientRepository;
 use Padosoft\Iam\Domain\OAuth\Repositories\RefreshTokenRepository;
 use Padosoft\Iam\Domain\OAuth\Repositories\ScopeRepository;
 use Padosoft\Iam\Domain\OAuth\ResponseTypes\OidcBearerTokenResponse;
+use Padosoft\Iam\Domain\OAuth\Token\TokenIssuanceContext;
 
 /**
  * Costruisce l'AuthorizationServer di league cablando i nostri repository e abilitando i
@@ -41,6 +42,7 @@ final class AuthorizationServerFactory
         private readonly SessionRegistry $sessions,
         private readonly string $encryptionKey,
         private readonly array $config,
+        private readonly ?TokenIssuanceContext $issuance = null,
     ) {}
 
     public function make(): AuthorizationServer
@@ -51,7 +53,7 @@ final class AuthorizationServerFactory
             $this->scopes,
             $this->placeholderKey(),
             $this->encryptionKey,
-            new OidcBearerTokenResponse($this->signer, $this->oidc, $this->config['access_ttl'] ?? 900),
+            new OidcBearerTokenResponse($this->signer, $this->oidc, $this->config['access_ttl'] ?? 900, $this->issuance),
         );
 
         $grants = $this->config['grants'] ?? [];

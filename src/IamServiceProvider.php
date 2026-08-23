@@ -201,6 +201,7 @@ final class IamServiceProvider extends PackageServiceProvider
             $this->app->make(SessionRegistry::class),
             $this->resolveOauthEncryptionKey(),
             $this->oauthConfig(),
+            $this->app->make(TokenIssuanceContext::class),
         ))->make());
     }
 
