@@ -18,6 +18,13 @@ specifiche del package: `CLAUDE.md`. Lezioni accumulate: `LESSON.md`.
 5. Non fingere il loop. Se un servizio non è disponibile, registralo (PROGRESS) e prosegui sul resto.
 6. Aggiorna `LESSON.md` a OGNI scoperta/fix; passa `LESSON.md` nel contesto di ogni subagent.
 7. Fine task significativo ⇒ README aggiornato e doc-site coerente.
+8. **Admin surface parity (REGOLA FISSA)**: ogni feature funzionale aggiunta a un package
+   dell'ecosistema iam-*/ai-*/rebel-* arriva nella **stessa iterazione** con la sua superficie
+   admin aggiornata — vederla, osservarla, manipolarla. Mappa: iam-server e moduli iam-* →
+   `laravel-iam-console`; flow/flow-ai → `laravel-flow-admin`; ai-finops → `laravel-ai-finops-admin`;
+   ai-guardrails → `laravel-ai-guardrails-admin`; rebel-* (incluso rebel-ai-guard) →
+   `laravel-rebel-admin` (+ `rebel-admin-api`); ai-act-compliance → `laravel-ai-act-compliance-admin`.
+   Una feature senza la sua superficie admin NON è finita.
 
 ## Commit & PR
 - Commit terminano con: `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`
