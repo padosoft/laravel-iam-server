@@ -7,6 +7,7 @@ namespace Padosoft\Iam\Domain\Audit\Pii;
 use Padosoft\Iam\Contracts\Crypto\SecretCipher;
 use Padosoft\Iam\Domain\Audit\AuditChainAppender;
 use Padosoft\Iam\Domain\Audit\Models\AuditEvent;
+use Padosoft\Iam\Domain\Audit\Webhooks\AuditEventPusher;
 
 /**
  * Registra eventi di audit applicando privacy-by-default (doc 12 §7-§8): la PII viene cifrata con
@@ -18,6 +19,10 @@ final class AuditRecorder
     public function __construct(
         private readonly AuditChainAppender $appender,
         private readonly SecretCipher $cipher,
+        // Opzionale (P2): un costruttore diretto senza pusher — com'è nei test — salta il push
+        // webhook; il container lo inietta e ogni evento sigillato qui viene anche spinto alle
+        // subscription attive (best-effort, mai bloccante — vedi AuditEventPusher).
+        private readonly ?AuditEventPusher $pusher = null,
     ) {}
 
     /**
@@ -38,7 +43,10 @@ final class AuditRecorder
             $attributes['pii_dek_id'] = $scope;
         }
 
-        return $this->appender->append($attributes);
+        $event = $this->appender->append($attributes);
+        $this->pusher?->push($event);
+
+        return $event;
     }
 
     /**

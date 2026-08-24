@@ -20,6 +20,9 @@ use Padosoft\Iam\Domain\OAuth\Models\OauthClient;
  */
 final class ManifestApplier
 {
+    /** Grant URN del Token Exchange (RFC 8693) — l'unico grant delle app di tipo `agent`. */
+    private const TOKEN_EXCHANGE_GRANT = 'urn:ietf:params:oauth:grant-type:token-exchange';
+
     /** Secret in chiaro generato per un client confidential nuovo (da consegnare una sola volta). */
     private ?string $generatedSecret = null;
 
@@ -99,7 +102,14 @@ final class ManifestApplier
         $client->fill([
             'name' => is_string($app['name'] ?? null) ? $app['name'] : $appKey,
             'redirect_uris' => array_values(array_filter($this->arr($auth['redirect_uris'] ?? null), 'is_string')),
-            'grants' => $type === 'service' ? ['client_credentials'] : ['authorization_code', 'refresh_token'],
+            'grants' => match ($type) {
+                'service' => ['client_credentials'],
+                // App `agent` (delega RFC 8693, modulo -agents): SOLO token-exchange — niente
+                // authorization_code (un agente non fa login interattivo) né refresh (i token
+                // delegati non si rinnovano: si ri-scambiano, ed è il check di freshness).
+                'agent' => [self::TOKEN_EXCHANGE_GRANT],
+                default => ['authorization_code', 'refresh_token'],
+            },
             'scopes' => $this->clientScopes($payload),
             'is_confidential' => $confidential,
             'is_first_party' => true, // le app del registry sono first-party

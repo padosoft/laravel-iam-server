@@ -1013,6 +1013,12 @@ paths:
         - $ref: "#/components/parameters/Cursor"
       responses:
         "200": { description: OK }
+  /capabilities:
+    get:
+      tags: [Capabilities]
+      summary: Moduli opzionali e feature attivi su questo server (per l'UI condizionale del pannello). Autenticato, nessun permesso richiesto.
+      responses:
+        "200": { description: "OK — { modules: {nome: bool}, features: {modulo: {...}} }" }
   /metrics/decisions:
     get:
       tags: [Metrics]

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Padosoft\Iam;
 
+use Illuminate\Contracts\Container\Container;
 use Illuminate\Support\Facades\Route;
 use League\OAuth2\Server\AuthorizationServer;
 use Padosoft\Iam\Console\Commands\AuditCheckpointCommand;
@@ -20,6 +21,7 @@ use Padosoft\Iam\Console\Commands\ReviewsCloseCommand;
 use Padosoft\Iam\Console\Commands\ReviewsOpenCommand;
 use Padosoft\Iam\Console\Commands\ReviewsRemindCommand;
 use Padosoft\Iam\Console\Commands\RotateDueSecretsCommand;
+use Padosoft\Iam\Console\Commands\WebhooksRetryCommand;
 use Padosoft\Iam\Contracts\Assurance\AssuranceProvider;
 use Padosoft\Iam\Contracts\Assurance\FactorVerifier;
 use Padosoft\Iam\Contracts\Assurance\StepUpProvider;
@@ -29,6 +31,10 @@ use Padosoft\Iam\Contracts\Crypto\SecretCipher;
 use Padosoft\Iam\Contracts\Crypto\TokenSigner;
 use Padosoft\Iam\Contracts\Governance\FeatureScope;
 use Padosoft\Iam\Contracts\Identity\SessionRegistry;
+use Padosoft\Iam\Domain\Audit\AuditChainAppender;
+use Padosoft\Iam\Domain\Audit\Outbox\OutboxProcessor;
+use Padosoft\Iam\Domain\Audit\Pii\AuditRecorder;
+use Padosoft\Iam\Domain\Audit\Webhooks\AuditEventPusher;
 use Padosoft\Iam\Domain\Authorization\Pdp\NativeSqlEngine;
 use Padosoft\Iam\Domain\Crypto\LocalKeyProvider;
 use Padosoft\Iam\Domain\Crypto\LocalSecretCipher;
@@ -49,6 +55,7 @@ use Padosoft\Iam\Domain\OAuth\Repositories\ClientRepository;
 use Padosoft\Iam\Domain\OAuth\Repositories\RefreshTokenRepository;
 use Padosoft\Iam\Domain\OAuth\Repositories\ScopeRepository;
 use Padosoft\Iam\Domain\OAuth\Token\LocalTokenSigner;
+use Padosoft\Iam\Domain\OAuth\Token\TokenIssuanceContext;
 use Padosoft\Iam\Http\Admin\Middleware\AdminAuthenticate;
 use Padosoft\Iam\Http\Admin\Middleware\AuthorizeIamPermission;
 use Padosoft\Iam\Http\Admin\Middleware\IdempotencyKey;
@@ -97,6 +104,7 @@ final class IamServiceProvider extends PackageServiceProvider
                 PruneSessionsCommand::class,
                 PruneIdempotencyKeysCommand::class,
                 MakeJwkCommand::class,
+                WebhooksRetryCommand::class,
             ]);
     }
 
@@ -104,6 +112,20 @@ final class IamServiceProvider extends PackageServiceProvider
     {
         // M2: PDP engine nativo (RBAC+ABAC, deny-overrides) come AuthorizationEngine.
         $this->app->bind(AuthorizationEngine::class, NativeSqlEngine::class);
+
+        // P2 — push webhook degli eventi sigillati. Binding ESPLICITI: il pusher è un parametro
+        // nullable-con-default (così `new AuditRecorder(...)` diretto nei test resta valido) e il
+        // container non risolve mai le dipendenze opzionali da solo — senza questi bind il push
+        // resterebbe silenziosamente spento.
+        $this->app->bind(AuditRecorder::class, fn (Container $app): AuditRecorder => new AuditRecorder(
+            $app->make(AuditChainAppender::class),
+            $app->make(SecretCipher::class),
+            $app->make(AuditEventPusher::class),
+        ));
+        $this->app->bind(OutboxProcessor::class, fn (Container $app): OutboxProcessor => new OutboxProcessor(
+            $app->make(AuditChainAppender::class),
+            $app->make(AuditEventPusher::class),
+        ));
 
         // M14: telemetria. null (default, zero deps) | log (canale strutturato) | otlp (push nativo al
         // collector OpenTelemetry) | stack (log + otlp). Il tracing non altera mai il flusso di business.
@@ -159,11 +181,17 @@ final class IamServiceProvider extends PackageServiceProvider
         $this->app->singleton(KeyProvider::class, fn (): LocalKeyProvider => new LocalKeyProvider($this->resolveKek()));
         $this->app->singleton(SecretCipher::class, fn (): LocalSecretCipher => new LocalSecretCipher($this->app->make(KeyProvider::class)));
 
+        // TokenIssuanceContext: canale request-scoped per claim/header aggiuntivi del token in
+        // emissione (delega RFC 8693, modulo -agents). Singleton condiviso tra il signer, il
+        // claims builder e il TokenController (che lo resetta a ogni richiesta token).
+        $this->app->singleton(TokenIssuanceContext::class);
+
         // M4: firma JWT (TokenSigner ES256).
         $this->app->singleton(TokenSigner::class, fn (): LocalTokenSigner => new LocalTokenSigner(
             $this->app->make(KeyProvider::class),
             $this->resolveIssuer(),
             $this->resolveOpensslConfig(),
+            $this->app->make(TokenIssuanceContext::class),
         ));
 
         // M4b: motore OAuth (league). I repository sono auto-risolti (TokenSigner è bound sopra).
@@ -194,6 +222,7 @@ final class IamServiceProvider extends PackageServiceProvider
             $this->app->make(SessionRegistry::class),
             $this->resolveOauthEncryptionKey(),
             $this->oauthConfig(),
+            $this->app->make(TokenIssuanceContext::class),
         ))->make());
     }
 

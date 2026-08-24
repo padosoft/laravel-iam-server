@@ -6,6 +6,8 @@ namespace Padosoft\Iam\Domain\Audit\Outbox;
 
 use Illuminate\Support\Facades\DB;
 use Padosoft\Iam\Domain\Audit\AuditChainAppender;
+use Padosoft\Iam\Domain\Audit\Models\AuditEvent;
+use Padosoft\Iam\Domain\Audit\Webhooks\AuditEventPusher;
 
 /**
  * Worker dell'outbox (doc 12 §5): poll dei messaggi pending, sigillatura nella hash-chain e
@@ -14,7 +16,12 @@ use Padosoft\Iam\Domain\Audit\AuditChainAppender;
  */
 final class OutboxProcessor
 {
-    public function __construct(private readonly AuditChainAppender $appender) {}
+    public function __construct(
+        private readonly AuditChainAppender $appender,
+        // Opzionale (P2): il push webhook parte DOPO il commit della transazione di sigillatura,
+        // mai dentro (niente HTTP in transazione DB) — vedi AuditEventPusher per il gating.
+        private readonly ?AuditEventPusher $pusher = null,
+    ) {}
 
     /** Processa fino a $batch messaggi pending. Ritorna il numero di messaggi consegnati. */
     public function process(int $batch = 100): int
@@ -39,11 +46,11 @@ final class OutboxProcessor
     private function deliverOne(string $id): bool
     {
         try {
-            return DB::transaction(function () use ($id): bool {
+            $event = DB::transaction(function () use ($id): ?AuditEvent {
                 $message = OutboxMessage::query()->lockForUpdate()->find($id);
                 // Un altro worker può aver già consegnato tra il poll e il lock: ri-controlla sotto lock.
                 if ($message === null || $message->status !== 'pending') {
-                    return false;
+                    return null;
                 }
 
                 $event = $this->appender->append($message->payload_json);
@@ -55,8 +62,18 @@ final class OutboxProcessor
                     'delivered_at' => now(),
                 ])->save();
 
-                return true;
+                return $event;
             });
+
+            if ($event === null) {
+                return false;
+            }
+
+            // Push webhook FUORI dalla transazione: l'evento è già sigillato e il messaggio marcato
+            // delivered; una consegna webhook fallita non deve fare rollback della sigillatura.
+            $this->pusher?->push($event);
+
+            return true;
         } catch (\Throwable $e) {
             // Poison message: senza registrare il fallimento, la tx fa rollback e il messaggio
             // rientrerebbe in OGNI poll all'infinito. Incrementiamo attempts in una tx separata e,

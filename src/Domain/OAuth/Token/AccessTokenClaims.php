@@ -19,7 +19,10 @@ use Padosoft\Iam\Domain\Organizations\Models\Organization;
  */
 final class AccessTokenClaims
 {
-    public function __construct(private readonly OidcContext $oidc) {}
+    public function __construct(
+        private readonly OidcContext $oidc,
+        private readonly ?TokenIssuanceContext $issuance = null,
+    ) {}
 
     /**
      * @return array<string, mixed>
@@ -65,6 +68,13 @@ final class AccessTokenClaims
             if ($session !== null) {
                 $claims['aal'] = $this->effectiveAal($session);
             }
+        }
+
+        // Delega AI agents (RFC 8693): il grant token-exchange (modulo -agents) deposita
+        // act/pds_dgr/audience nel TokenIssuanceContext; l'applicazione è guardata dalle
+        // chiavi riservate (vedi TokenIssuanceContext::RESERVED — mai override di sub/scope/...).
+        if ($this->issuance !== null) {
+            $claims = $this->issuance->apply($claims);
         }
 
         return $claims;

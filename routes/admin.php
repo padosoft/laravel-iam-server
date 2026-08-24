@@ -7,6 +7,7 @@ use Padosoft\Iam\Http\Admin\Controllers\AccessRequestsController;
 use Padosoft\Iam\Http\Admin\Controllers\AccessReviewsController;
 use Padosoft\Iam\Http\Admin\Controllers\ApplicationsController;
 use Padosoft\Iam\Http\Admin\Controllers\AuditController;
+use Padosoft\Iam\Http\Admin\Controllers\CapabilitiesController;
 use Padosoft\Iam\Http\Admin\Controllers\DecisionsController;
 use Padosoft\Iam\Http\Admin\Controllers\DirectorySourcesController;
 use Padosoft\Iam\Http\Admin\Controllers\FederatedProvidersController;
@@ -27,6 +28,10 @@ use Padosoft\Iam\Http\Admin\Controllers\WebhooksController;
  * (AdminAuthenticate) e le mutazioni passano da Idempotency-Key; ogni rotta dichiara il permesso
  * richiesto col middleware `iam.can:<permission>` (PDP = autorità, fail-closed).
  */
+
+// Capabilities (P4) — autenticato, senza iam.can: il pannello ne ha bisogno al bootstrap per
+// qualsiasi operatore, e il payload dichiara solo quali moduli/feature sono attivi (non dati tenant).
+Route::get('capabilities', [CapabilitiesController::class, 'index']);
 
 // Users (doc 16 §3.2)
 Route::get('users', [UsersController::class, 'index'])->middleware('iam.can:iam:users.read');

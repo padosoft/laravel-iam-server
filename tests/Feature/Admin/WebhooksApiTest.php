@@ -62,6 +62,9 @@ it('crea una subscription con secret write-only e rifiuta un URL SSRF', function
 });
 
 it('test-delivery passa dall\'URL-guard e consegna (2xx → delivered)', function () {
+    // Isola il canale test-delivery: senza, il push P2 consegna ANCHE gli eventi di audit admin
+    // (iam.webhook.created/…) alla subscription '*' appena creata e i conteggi sotto non tornano.
+    config()->set('iam.audit.webhooks.push_enabled', false);
     Http::fake(['https://hook.test/*' => Http::response('', 200)]);
     whGrant('adm', ['iam:webhooks.read', 'iam:webhooks.manage']);
     $id = $this->postJson('/api/iam/v1/webhooks', ['url' => 'https://hook.test/in', 'event_filters' => ['*'], 'secret' => 'whsec'], ['X-Test-Auth' => 'adm', 'Idempotency-Key' => 'w1'])->json('data.id');

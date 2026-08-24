@@ -35,6 +35,7 @@ final class LocalTokenSigner implements TokenSigner
         private readonly KeyProvider $keys,
         private readonly string $issuer,
         private readonly ?string $opensslConfig = null,
+        private readonly ?TokenIssuanceContext $issuance = null,
     ) {}
 
     public function issue(array $claims, int $ttlSeconds): string
@@ -48,6 +49,14 @@ final class LocalTokenSigner implements TokenSigner
             ->expiresAt($now->add(new \DateInterval('PT'.max(1, $ttlSeconds).'S')))
             ->identifiedBy($this->resolveJti($claims))
             ->withHeader('kid', $key->kid);
+
+        // Header `typ` dedicato (es. `delegated+jwt` per i token delegati, RFC 8693 via
+        // TokenIssuanceContext). Igiene di spec per i verifier act-aware; la difesa primaria
+        // dei token delegati resta l'introspection. alg/kid restano del signer.
+        $typ = $this->issuance?->typ();
+        if ($typ !== null) {
+            $builder = $builder->withHeader('typ', $typ);
+        }
 
         foreach ($claims as $name => $value) {
             // iss e i temporali (iat/exp/nbf) li impone il signer → NON sovrascrivibili (anti-spoofing).

@@ -10,6 +10,7 @@ use League\OAuth2\Server\Entities\ScopeEntityInterface;
 use League\OAuth2\Server\ResponseTypes\BearerTokenResponse;
 use Padosoft\Iam\Contracts\Crypto\TokenSigner;
 use Padosoft\Iam\Domain\OAuth\Oidc\OidcContext;
+use Padosoft\Iam\Domain\OAuth\Token\TokenIssuanceContext;
 
 /**
  * Response Bearer con id_token OIDC (doc 13 §5): quando lo scope include `openid` e il token è
@@ -22,6 +23,7 @@ final class OidcBearerTokenResponse extends BearerTokenResponse
         private readonly TokenSigner $signer,
         private readonly OidcContext $context,
         private readonly int $idTokenTtl,
+        private readonly ?TokenIssuanceContext $issuance = null,
     ) {}
 
     /**
@@ -29,18 +31,22 @@ final class OidcBearerTokenResponse extends BearerTokenResponse
      */
     protected function getExtraParams(AccessTokenEntityInterface $accessToken): array
     {
+        // Parametri di risposta depositati dal grant corrente (allow-list stretta nel
+        // TokenIssuanceContext: issued_token_type/scope, RFC 8693 §2.2 — modulo -agents).
+        $extra = $this->issuance?->responseParams() ?? [];
+
         $scopes = array_map(
             static fn (ScopeEntityInterface $scope): string => $scope->getIdentifier(),
             $accessToken->getScopes(),
         );
         if (!in_array('openid', $scopes, true)) {
-            return [];
+            return $extra;
         }
 
         // id_token solo per token legati a un utente (no client_credentials).
         $sub = $accessToken->getUserIdentifier();
         if ($sub === null || $sub === '') {
-            return [];
+            return $extra;
         }
 
         $claims = [
@@ -66,6 +72,6 @@ final class OidcBearerTokenResponse extends BearerTokenResponse
             $claims['sid'] = $sid;
         }
 
-        return ['id_token' => $this->signer->issue($claims, $this->idTokenTtl)];
+        return $extra + ['id_token' => $this->signer->issue($claims, $this->idTokenTtl)];
     }
 }
