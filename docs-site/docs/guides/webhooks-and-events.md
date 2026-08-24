@@ -76,6 +76,24 @@ decisions (notably denials), manifest approve/apply/rollback, grant changes, ses
 access-review certifications and access-request approvals. Audit is the source of truth; webhooks are a
 delivery channel on top of it.
 
+## Push at the moment of sealing
+
+Since v1.23 every event is **pushed to matching subscriptions the moment it is sealed** in the hash-chain
+(`AuditEventPusher`, wired into both `AuditRecorder` and the outbox worker — always *after* the sealing
+transaction commits, never inside it). The push is best-effort and config-gated
+(`iam.audit.webhooks.push_enabled`, on by default): a delivery failure can never fail the operation that
+produced the event — the chain stays the source of truth, and failed attempts are picked up by the retrier.
+
+Schedule the retrier so failed deliveries do not sit still:
+
+```bash
+php artisan iam:webhooks-retry   # re-attempts due deliveries with backoff; over the threshold → DLQ
+```
+
+This is also the **revocation push channel** for [delegated access](/guides/delegated-access): a
+subscription on `iam.delegation.*` learns about revoked grants and refused exchanges the moment they are
+sealed, instead of polling.
+
 ::: callout warning "Secrets are write-only" icon:eye-off
 Webhook (and federated-provider, and directory-source) secrets are stored encrypted and **never returned**
 by the API. If you lose one, rotate it — there is no read-back. This is deliberate: a leaked Admin API

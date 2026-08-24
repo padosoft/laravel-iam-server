@@ -74,7 +74,8 @@
         { "title": "Sessions & step-up", "path": "/guides/sessions-and-step-up" },
         { "title": "Access reviews", "path": "/guides/access-reviews" },
         { "title": "Access requests", "path": "/guides/access-requests" },
-        { "title": "Webhooks & events", "path": "/guides/webhooks-and-events" }
+        { "title": "Webhooks & events", "path": "/guides/webhooks-and-events" },
+        { "title": "Delegated access (AI agents)", "path": "/guides/delegated-access" }
       ]
     },
     {
