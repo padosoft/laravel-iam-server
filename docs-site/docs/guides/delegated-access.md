@@ -1,0 +1,77 @@
+---
+title: Delegated access (AI agents)
+description: The laravel-iam-agents module — agents as first-class identities acting on behalf of users via RFC 8693 token exchange — and the four small core seams (claim pipeline, agent app type, revocation push, /capabilities) that host it.
+---
+
+# Delegated access (AI agents)
+
+## Motivation
+
+An AI agent that acts for a user must never hold the user's own token: that token grants *everything* the
+user can do, for its whole lifetime, with no way to distinguish "the user did this" from "the agent did
+this" — and no way to stop the agent without logging the user out.
+
+The optional module [`padosoft/laravel-iam-agents`](https://github.com/padosoft/laravel-iam-agents)
+(precedent: `laravel-iam-directory`) turns agents into **first-class identities** with an OAuth 2.0 Token
+Exchange ([RFC 8693](https://datatracker.ietf.org/doc/html/rfc8693)) flow on this server's own token
+endpoint:
+
+```mermaid
+sequenceDiagram
+    participant O as Orchestrator (holds the user token)
+    participant AS as /oauth/token (this server)
+    participant RS as Resource / MCP server
+    O->>AS: grant_type=token-exchange<br/>subject_token (user) + private_key_jwt (agent)
+    AS->>AS: agent active? session alive? grant active?<br/>scopes = requested ∩ grant ∩ max_scopes
+    AS-->>O: delegated token — sub:user, act:agent,<br/>TTL ≤ 300s, non-refreshable
+    O->>RS: call with the delegated token
+    RS->>AS: /oauth/introspect (mandatory)
+```
+
+**The invariant everything enforces:** a delegated token carries two identities (`sub` = user, `act` =
+agent), and effective authority is the **strict intersection** of what the user and the agent may do —
+never the union, evaluated fresh by the PDP, fail-closed. Short TTL and no refresh are deliberate: the
+re-exchange *is* the revocation freshness check.
+
+## What the module brings
+
+- **Agent registry** — lifecycle `pending → active` (human approval only: approving creates the agent's
+  OAuth client, confidential, `private_key_jwt`, token-exchange grant only) `→ suspended / retired`.
+- **Delegation grants** — the user's consent: agent, scopes (⊆ the agent's `max_scopes`), purpose,
+  expiry, consent evidence (AAL + confirmation id). PSD2-grade consent via `rebel-step-up` dynamic
+  linking, or the built-in IAM-native verifier.
+- **Delegated PDP** — `checkDelegated()` as a decorator over the engine: user check ∧ agent check ∧ grant
+  still active, sub-decision ids cited, deny-overrides on every layer.
+- **Gated agentic registration** — RFC 7591 DCR + `auth.md`/ID-JAG discovery, off by default; every
+  registration lands `pending` with zero scopes until a human approves.
+- **Audit stream `delegation`** — every exchange (issued *and* refused), grant create/revoke, lifecycle
+  transition, sealed in the tamper-evident chain and pushed to webhook subscribers.
+
+## The four core seams it plugs into
+
+The module registers its RFC 8693 grant from the outside — `app()->extend(AuthorizationServer::class)` —
+and the core provides exactly four small, additive seams:
+
+| Seam | What it is |
+| --- | --- |
+| **`TokenIssuanceContext`** (P1) | Request-scoped, reset-per-request singleton (pattern: `OidcContext`) through which a grant contributes extra claims (`act`, `aud`), a `typ` header, and allow-listed response params (`issued_token_type`). Reserved claims (`sub`, `iss`, `scope`, `sid`, …) are rejected with a throw. |
+| **`app.type = agent`** (P3) | Manifest-provisioned agents get ONLY the token-exchange grant URN and MUST use `private_key_jwt` — no auth-code (agents don't log in interactively), no refresh (delegated tokens are re-exchanged). |
+| **Revocation push** (P2) | Every sealed audit event is pushed to matching webhook subscriptions — see [Webhooks & events](/guides/webhooks-and-events). A grant revocation reaches PEPs and agents without waiting for a poll. |
+| **`GET /capabilities`** (P4) | Optional modules declare themselves via `config('iam.capabilities.*')` at boot; the console shows/hides its Agents/Delegations pages without probing endpoints for 409s. |
+
+## Verifying delegated tokens (resource-server side)
+
+Delegated tokens are **introspection-mandatory**: a resource server that accepts delegation calls
+`/oauth/introspect` (which also checks that the delegating user's session is still alive) rather than
+trusting local claims parsing. `padosoft/laravel-iam-client` ships this ready-made — the
+`iam.can.delegated` middleware and `Iam::checkDelegated()` (see the
+[client's delegated-access guide](https://doc.laravel-iam-client.padosoft.com/guides/delegated-access)).
+The `typ: delegated+jwt` header is hygiene, never the defence.
+
+## See also
+
+- [`laravel-iam-agents` README](https://github.com/padosoft/laravel-iam-agents) — full feature tour,
+  comparison vs WorkOS / Auth0, threat model, quickstart.
+- [Webhooks & events](/guides/webhooks-and-events) — the push channel revocations ride on.
+- [private_key_jwt](/guides/private-key-jwt) — the only client auth agents are allowed.
+- [Sessions & step-up](/guides/sessions-and-step-up) — session liveness, which every exchange re-checks.
