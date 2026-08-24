@@ -70,8 +70,10 @@ The `typ: delegated+jwt` header is hygiene, never the defence.
 
 ## See also
 
-- [`laravel-iam-agents` README](https://github.com/padosoft/laravel-iam-agents) — full feature tour,
-  comparison vs WorkOS / Auth0, threat model, quickstart.
+- [`laravel-iam-agents` docs](https://doc.laravel-iam-agents.padosoft.com) — the module's own site:
+  quickstart, glossary, intersection rule, consent verifiers, threat model, every RFC 8693 error
+  explained ([README](https://github.com/padosoft/laravel-iam-agents) for the feature tour and the
+  WorkOS / Auth0 comparison).
 - [Webhooks & events](/guides/webhooks-and-events) — the push channel revocations ride on.
 - [private_key_jwt](/guides/private-key-jwt) — the only client auth agents are allowed.
 - [Sessions & step-up](/guides/sessions-and-step-up) — session liveness, which every exchange re-checks.
