@@ -63,6 +63,16 @@ ask the PDP. You get one place to see and prove every access decision.
   only its **public** key (JWKS) and proves itself by signing a short-lived, audience-bound, single-use (`jti`)
   ES256 assertion — nothing secret ever leaves the client, nothing to rotate or leak. Full guide:
   [private_key_jwt](https://doc.laravel-iam-server.padosoft.com/guides/private-key-jwt).
+- **Delegated access for AI agents** *(optional module)* — [`laravel-iam-agents`](https://github.com/padosoft/laravel-iam-agents)
+  plugs an OAuth 2.0 **Token Exchange (RFC 8693)** grant into this server's own token endpoint: agents are
+  first-class identities, a delegated token carries **two identities** (`sub` = user, `act` = agent) and
+  authority is the **strict intersection** user ∩ agent ∩ consented grant — never the union, fail-closed,
+  short-TTL, introspection-mandatory. Since v1.1 a grant can carry a **budget** (€/token/call caps, metered
+  by [ai-finops](https://github.com/padosoft/laravel-ai-finops)) and supports **JIT scope elevation**
+  (out-of-band nudge, in-app bound re-consent) — with anomaly auto-suspend
+  ([rebel-ai-guard](https://github.com/padosoft/laravel-rebel-ai-guard)) and EU AI Act evidence
+  ([ai-act-compliance](https://github.com/padosoft/laravel-ai-act-compliance)) around the same audit stream.
+  Full guide: [Delegated access](https://doc.laravel-iam-server.padosoft.com/guides/delegated-access).
 - **Tamper-evident audit** — hash-chained events (`AuditChainAppender` / `AuditChainVerifier`), SIEM export,
   webhooks/outbox, and GDPR crypto-shredding / legal-hold for PII.
 - **Identity governance (IGA)** — access-review campaigns, access-request approval flows, least-privilege
@@ -195,6 +205,8 @@ curl -X POST https://iam.example.com/api/iam/v1/decisions/check \
 | [laravel-iam-node](https://github.com/padosoft/laravel-iam-node) | Node/TypeScript SDK: decision checks + token verify; same 3 auth modes |
 | [laravel-iam-rust](https://github.com/padosoft/laravel-iam-rust) | Rust SDK (async + blocking): decision checks + token verify; same 3 auth modes |
 | [laravel-iam-react-native](https://github.com/padosoft/laravel-iam-react-native) | React Native client + hooks (public client: PKCE, no shared secret) |
+| [laravel-iam-agents](https://github.com/padosoft/laravel-iam-agents) | Optional module: **delegated access for AI agents** — agent registry, RFC 8693 token exchange with the `act` claim, intersection PDP, PSD2-grade consent, grant budgets + JIT elevation (v1.1) |
+| [laravel-iam-console](https://github.com/padosoft/laravel-iam-console) | The deployable web console over the Admin API (users, roles, sessions, audit, reviews — plus Agents & Delegations when the agents module is installed) |
 | [laravel-iam-ai](https://github.com/padosoft/laravel-iam-ai) | Optional AI module: advisory-only governance (redaction + hallucination guard + audit) |
 | [laravel-iam-directory](https://github.com/padosoft/laravel-iam-directory) | Optional directory module: LDAP / Active Directory; SCIM in v2 |
 | [laravel-iam-bridge-spatie-permission](https://github.com/padosoft/laravel-iam-bridge-spatie-permission) | Migration bridge from spatie/laravel-permission: scan, shadow mode, decision diffing, cutover |

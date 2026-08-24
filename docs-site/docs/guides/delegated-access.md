@@ -59,6 +59,37 @@ and the core provides exactly four small, additive seams:
 | **Revocation push** (P2) | Every sealed audit event is pushed to matching webhook subscriptions — see [Webhooks & events](/guides/webhooks-and-events). A grant revocation reaches PEPs and agents without waiting for a poll. |
 | **`GET /capabilities`** (P4) | Optional modules declare themselves via `config('iam.capabilities.*')` at boot; the console shows/hides its Agents/Delegations pages without probing endpoints for 409s. |
 
+## v1.1 — budgets, JIT elevation, and the guarded stream
+
+The module's v1.1 completes the loop around the same exchange and audit stream this server hosts:
+
+- **Budget-bounded delegation** — *scopes bound authority, budgets bound intensity*: a grant can carry
+  €/token/call caps, approved inside the same cryptographically bound consent. Enforcement is
+  **fail-closed at exchange**: a budgeted grant with no `DelegationBudgetGuard` bound is refused
+  (`delegation_budget_unenforceable`); the reference meter is
+  [`laravel-ai-finops`](https://github.com/padosoft/laravel-ai-finops) ≥ 1.6, which sums its usage
+  ledger per grant — an exhausted budget stops the agent within one token TTL, because the re-exchange
+  is the checkpoint.
+- **JIT scope elevation** — an action outside the grant no longer dies on a flat deny: the agent opens an
+  elevation request (extra scopes + reason), the delegating user is nudged out-of-band
+  ([`laravel-rebel-channels`](https://github.com/padosoft/laravel-rebel-channels) ≥ 0.1.3, best-effort and
+  informative only) and approves with a **bound step-up re-consent** — the agent's `max_scopes` ceiling
+  stays uncrossable, pending requests self-expire, denying is one click.
+- **Anomaly detection with opt-in auto-suspend** —
+  [`laravel-rebel-ai-guard`](https://github.com/padosoft/laravel-rebel-ai-guard) ≥ 0.1.3 reads this
+  server's `iam_audit_events` (stream `delegation`): exchange bursts and scope probing open cases, and —
+  only with an explicit opt-in — High/Critical cases suspend the agent through the `AgentLifecycle` port
+  (the transition is audited here like any admin suspend).
+- **EU AI Act evidence** —
+  [`laravel-ai-act-compliance`](https://github.com/padosoft/laravel-ai-act-compliance) ≥ 1.8 turns the
+  module's domain events into Art. 14 human-oversight records (grants, with the consent evidence) and
+  Art. 6 risk-register entries (approved agents, lifecycle-tracked).
+
+Everything above rides the seams already described: the exchange refusals land in the `delegation`
+audit stream with their precise reason, and the console shows grant budgets and pending elevations next
+to the kill-switch. Full mechanics:
+[Budget & elevation](https://doc.laravel-iam-agents.padosoft.com/guides/budget-and-elevation).
+
 ## Verifying delegated tokens (resource-server side)
 
 Delegated tokens are **introspection-mandatory**: a resource server that accepts delegation calls
