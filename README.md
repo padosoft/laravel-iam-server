@@ -81,6 +81,14 @@ ask the PDP. You get one place to see and prove every access decision.
   out that "the CFO no longer reads payroll" **before the CFO does**. Recording probes from real traffic
   is opt-in, sampled and capped. Full guide:
   [Blast radius & regression](https://doc.laravel-iam-server.padosoft.com/guides/blast-radius-and-regression).
+- **AI grounding provenance** — a permission can require that the decision was **not** made on the
+  strength of text an outsider wrote (`{"grounding_provenance": {"=": "trusted_internal"}}`). No new
+  column and no dedicated operator: the ABAC conditions already express it, and already deny when the
+  caller omits the field — an absent attribute is not a satisfied one, which is the property the whole
+  convention rests on and is pinned by a test. The authorization-layer half of a rule the AI packages
+  also enforce at publish time (`laravel-flow` taint analysis) and at call time (`laravel-ai-guardrails`
+  Control P). Full guide:
+  [AI grounding provenance](https://doc.laravel-iam-server.padosoft.com/guides/ai-grounding-provenance).
 - **Tamper-evident audit** — hash-chained events (`AuditChainAppender` / `AuditChainVerifier`), SIEM export,
   webhooks/outbox, and GDPR crypto-shredding / legal-hold for PII.
 - **Identity governance (IGA)** — access-review campaigns, access-request approval flows, least-privilege

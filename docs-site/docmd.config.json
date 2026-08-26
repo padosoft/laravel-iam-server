@@ -131,6 +131,10 @@
           "path": "/guides/ask-the-pdp"
         },
         {
+          "title": "AI grounding provenance",
+          "path": "/guides/ai-grounding-provenance"
+        },
+        {
           "title": "Blast radius & regression",
           "path": "/guides/blast-radius-and-regression",
           "icon": "radar"
