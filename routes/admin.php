@@ -17,6 +17,7 @@ use Padosoft\Iam\Http\Admin\Controllers\ManifestsController;
 use Padosoft\Iam\Http\Admin\Controllers\MetricsController;
 use Padosoft\Iam\Http\Admin\Controllers\OrganizationsController;
 use Padosoft\Iam\Http\Admin\Controllers\PoliciesWizardController;
+use Padosoft\Iam\Http\Admin\Controllers\PolicySimulationController;
 use Padosoft\Iam\Http\Admin\Controllers\RecommendationsController;
 use Padosoft\Iam\Http\Admin\Controllers\RelationsController;
 use Padosoft\Iam\Http\Admin\Controllers\SessionsController;
@@ -156,6 +157,16 @@ Route::post('manifests/{manifest}/approve', [ManifestsController::class, 'approv
 Route::post('manifests/{manifest}/reject', [ManifestsController::class, 'reject'])->middleware('iam.can:iam:manifests.approve');
 Route::post('manifests/{manifest}/apply', [ManifestsController::class, 'apply'])->middleware('iam.can:iam:manifests.apply');
 Route::post('manifests/{manifest}/rollback', [ManifestsController::class, 'rollback'])->middleware('iam.can:iam:manifests.apply');
+
+// Simulazione di policy (M-SIM): sonde, blast radius, regressione.
+// `policies.simulate` è un permesso a sé e NON `policies.read`: misurare un blast
+// radius esegue davvero il cambiamento in transazione — costa lock e scritture,
+// anche se poi annulla tutto — e non è quindi la stessa cosa di leggere il catalogo.
+Route::get('policy/probes', [PolicySimulationController::class, 'index'])->middleware('iam.can:iam:policies.read');
+Route::post('policy/probes', [PolicySimulationController::class, 'store'])->middleware('iam.can:iam:policies.simulate');
+Route::delete('policy/probes/{probe}', [PolicySimulationController::class, 'destroy'])->middleware('iam.can:iam:policies.simulate');
+Route::post('policy/regression', [PolicySimulationController::class, 'regression'])->middleware('iam.can:iam:policies.read');
+Route::post('manifests/{manifest}/blast-radius', [PolicySimulationController::class, 'blastRadius'])->middleware('iam.can:iam:policies.simulate');
 
 // Audit (doc 16 §3, doc 12) — sola lettura
 Route::get('audit/events', [AuditController::class, 'eventsIndex'])->middleware('iam.can:iam:audit.read');

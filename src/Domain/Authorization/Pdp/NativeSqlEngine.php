@@ -12,6 +12,7 @@ use Padosoft\Iam\Contracts\Support\SubjectRef;
 use Padosoft\Iam\Domain\Authorization\Models\Grant;
 use Padosoft\Iam\Domain\Authorization\Models\Permission;
 use Padosoft\Iam\Domain\Authorization\Models\Role;
+use Padosoft\Iam\Domain\Authorization\Simulation\PolicyProbeRecorder;
 use Padosoft\Iam\Domain\Governance\GrantUsageRecorder;
 use Padosoft\Iam\Domain\Identity\Models\User;
 use Padosoft\Iam\Domain\Organizations\Models\Organization;
@@ -27,10 +28,16 @@ final class NativeSqlEngine implements AuthorizationEngine
         private readonly ConditionEvaluator $conditions = new ConditionEvaluator,
         private readonly ?GrantUsageRecorder $usage = null,
         private readonly NativeReBacResolver $rebac = new NativeReBacResolver,
+        private readonly ?PolicyProbeRecorder $probes = null,
     ) {}
 
     public function decide(DecisionQuery $q): Decision
     {
+        // Corpus di regressione (opt-in, campionato, default OFF): registra la
+        // DOMANDA, mai la risposta. Una sonda che nascesse già con l'esito
+        // corrente promuoverebbe ogni bug esistente a requisito.
+        $this->probes?->record($q);
+
         $explain = [];
         $policyVersion = $this->policyVersion($q->organizationId);
         $decisionId = 'dec_'.Str::ulid()->toBase32();

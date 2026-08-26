@@ -90,6 +90,18 @@ Top-level toggles for the governance suite, the optional AI module
 ([`laravel-iam-ai`](https://doc.laravel-iam-ai.padosoft.com), `laravel/ai` suggest), the MCP server
 (`laravel/mcp` suggest), and outbound integrations.
 
+### simulation
+Blast radius and the policy-regression corpus.
+
+| Key | Default | Notes |
+|---|---|---|
+| `simulation.probe_sample_rate` | `0` | Fraction of decisions recorded into the corpus. **0 = recording off**: an IAM that writes a row per authorization check has just doubled its own writes. `0.01` is already enough for a representative corpus at real volumes. Sampling is deterministic on the tuple digest, so a recurring question is either always in the corpus or never — not appearing and disappearing between CI runs. |
+| `simulation.max_probes` | `5000` | Cap. Past it the recorder stops rather than growing forever: a corpus that does not fit in a human review does not get reviewed. |
+
+Recorded probes arrive **without** an expected outcome — they are material to read
+and promote, not assertions. See
+[Blast radius & regression](/guides/blast-radius-and-regression).
+
 ## config/iam-governance.php
 
 ### features

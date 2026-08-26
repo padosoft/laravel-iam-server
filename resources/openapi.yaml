@@ -891,6 +891,81 @@ paths:
       responses:
         "200": { description: Esito test }
         "409": { $ref: "#/components/responses/Problem" }
+  /policy/probes:
+    get:
+      tags: [PolicySimulation]
+      summary: Elenco delle sonde di policy (corpus di blast radius e regressione)
+      parameters:
+        - { name: source, in: query, required: false, schema: { type: string, enum: [manual, recorded] } }
+        - { name: with_expectation, in: query, required: false, schema: { type: boolean } }
+        - { name: cursor, in: query, required: false, schema: { type: string } }
+      responses:
+        "200": { description: OK }
+    post:
+      tags: [PolicySimulation]
+      summary: Registra (o aggiorna) una sonda; idempotente sul digest della tupla
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subject, permission]
+              properties:
+                subject: { type: object, description: "{type,id} oppure la stringa \"type:id\"" }
+                permission: { type: string }
+                resource: { type: string, nullable: true }
+                application_key: { type: string, nullable: true }
+                organization_id: { type: string, nullable: true }
+                current_aal: { type: string, default: aal1 }
+                context: { type: object, nullable: true }
+                label: { type: string, nullable: true }
+                expected_allowed:
+                  type: boolean
+                  nullable: true
+                  description: >-
+                    Valorizzato, la sonda diventa anche un test di regressione e una
+                    divergenza fallisce `iam:policy:check`. Omesso, la sonda descrive
+                    solo un caso da osservare.
+      responses:
+        "201": { description: Sonda creata }
+        "200": { description: "Sonda già presente, aggiornata" }
+  /policy/probes/{probe}:
+    delete:
+      tags: [PolicySimulation]
+      summary: Rimuove una sonda dal corpus
+      parameters:
+        - { name: probe, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      responses:
+        "200": { description: Rimossa }
+        "404": { description: Sonda inesistente }
+  /policy/regression:
+    post:
+      tags: [PolicySimulation]
+      summary: Valuta il corpus con esito atteso contro lo stato CORRENTE della policy
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      responses:
+        "200": { description: Nessuna divergenza }
+        "422": { description: "Divergenze: il corpo elenca sonda, atteso, ottenuto e spiegazione" }
+  /manifests/{manifest}/blast-radius:
+    post:
+      tags: [PolicySimulation]
+      summary: Cosa cambierebbe applicando questo manifest — misurato e poi ANNULLATO
+      description: >-
+        Applica davvero il manifest dentro una transazione, valuta le sonde col PDP
+        vero e annulla tutto. Non committa mai. Il report copre soltanto le sonde
+        presenti: zero cambiamenti significa che quelle sonde non cambiano, non che
+        nulla cambia.
+      parameters:
+        - { name: manifest, in: path, required: true, schema: { type: string } }
+        - { name: include_unchanged, in: query, required: false, schema: { type: boolean } }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      responses:
+        "200": { description: Report di blast radius }
+        "404": { description: Manifest inesistente }
+        "422": { description: Nessuna sonda contro cui misurare }
   /policies-wizard/permissions:
     get:
       tags: [PolicyWizard]

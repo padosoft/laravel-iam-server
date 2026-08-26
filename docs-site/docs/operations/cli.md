@@ -65,6 +65,21 @@ php artisan iam:reviews:close  --campaign=q3-warehouse
 php artisan iam:least-privilege:scan --org=org_123
 ```
 
+## Policy regression
+
+| Command | Purpose |
+|---|---|
+| `iam:policy:check {--org=} {--json}` | Evaluate the probes that carry an expected outcome against the current policy; **exits non-zero** on any divergence. The CI gate. |
+
+```bash
+php artisan iam:policy:check          # in CI, before a policy change ships
+php artisan iam:policy:check --json   # machine-readable for a pipeline
+```
+
+A corpus with no expectations **passes and says so**: a gate that passes because
+it has nothing to check is worse than no gate, because it looks like one. See
+[Blast radius & regression](/guides/blast-radius-and-regression).
+
 ## OAuth client credentials
 
 | Command | What it does |
