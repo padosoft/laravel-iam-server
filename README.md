@@ -73,6 +73,14 @@ ask the PDP. You get one place to see and prove every access decision.
   ([rebel-ai-guard](https://github.com/padosoft/laravel-rebel-ai-guard)) and EU AI Act evidence
   ([ai-act-compliance](https://github.com/padosoft/laravel-ai-act-compliance)) around the same audit stream.
   Full guide: [Delegated access](https://doc.laravel-iam-server.padosoft.com/guides/delegated-access).
+- **Blast radius + policy regression** — before approving a manifest, ask *who can do something new
+  after this?* and get an answer measured by **applying the change in a transaction, evaluating a corpus
+  of probes with the real PDP, and rolling back** — never by a second engine reasoning about the change,
+  which is a second truth that can drift. Probes carrying an expected outcome double as a regression
+  corpus: `iam:policy:check` exits non-zero when authorization stops saying what you decided, so you find
+  out that "the CFO no longer reads payroll" **before the CFO does**. Recording probes from real traffic
+  is opt-in, sampled and capped. Full guide:
+  [Blast radius & regression](https://doc.laravel-iam-server.padosoft.com/guides/blast-radius-and-regression).
 - **Tamper-evident audit** — hash-chained events (`AuditChainAppender` / `AuditChainVerifier`), SIEM export,
   webhooks/outbox, and GDPR crypto-shredding / legal-hold for PII.
 - **Identity governance (IGA)** — access-review campaigns, access-request approval flows, least-privilege

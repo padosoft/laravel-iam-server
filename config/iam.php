@@ -171,6 +171,31 @@ return [
         ],
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Simulazione di policy: blast radius e corpus di regressione
+    |--------------------------------------------------------------------------
+    |
+    | Il blast radius risponde a "cosa cambierebbe se applicassi questo manifest?"
+    | eseguendo davvero il cambiamento in transazione, valutando le sonde col PDP
+    | VERO e annullando tutto. Il corpus di regressione risponde alla domanda
+    | complementare — "la policy dice ancora quello che abbiamo deciso?" — e
+    | fallisce la CI quando non è più vero.
+    |
+    */
+    'simulation' => [
+        // Frazione di decisioni campionate nel corpus. 0 = registrazione SPENTA
+        // (default): un IAM che scrive una riga per ogni check ha appena
+        // raddoppiato le proprie scritture. 0.01 è già abbastanza per un corpus
+        // rappresentativo su volumi reali.
+        'probe_sample_rate' => (float) env('IAM_POLICY_PROBE_SAMPLE_RATE', 0),
+
+        // Tetto del corpus. Oltre, il recorder smette di registrare invece di
+        // crescere per sempre: un corpus che non entra in una revisione umana non
+        // viene revisionato.
+        'max_probes' => (int) env('IAM_POLICY_PROBE_MAX', 5000),
+    ],
+
     // M11 — AI (doc 15) — advisory-only, off di default, sovrano
     'ai' => [
         'enabled' => env('IAM_AI_ENABLED', false),

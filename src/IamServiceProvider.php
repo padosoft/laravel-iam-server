@@ -15,6 +15,7 @@ use Padosoft\Iam\Console\Commands\MakeJwkCommand;
 use Padosoft\Iam\Console\Commands\ManifestApplyCommand;
 use Padosoft\Iam\Console\Commands\ManifestRollbackCommand;
 use Padosoft\Iam\Console\Commands\ManifestValidateCommand;
+use Padosoft\Iam\Console\Commands\PolicyCheckCommand;
 use Padosoft\Iam\Console\Commands\PruneIdempotencyKeysCommand;
 use Padosoft\Iam\Console\Commands\PruneSessionsCommand;
 use Padosoft\Iam\Console\Commands\ReviewsCloseCommand;
@@ -36,6 +37,7 @@ use Padosoft\Iam\Domain\Audit\Outbox\OutboxProcessor;
 use Padosoft\Iam\Domain\Audit\Pii\AuditRecorder;
 use Padosoft\Iam\Domain\Audit\Webhooks\AuditEventPusher;
 use Padosoft\Iam\Domain\Authorization\Pdp\NativeSqlEngine;
+use Padosoft\Iam\Domain\Authorization\Simulation\PolicyProbeRecorder;
 use Padosoft\Iam\Domain\Crypto\LocalKeyProvider;
 use Padosoft\Iam\Domain\Crypto\LocalSecretCipher;
 use Padosoft\Iam\Domain\Governance\GrantUsageRecorder;
@@ -100,6 +102,7 @@ final class IamServiceProvider extends PackageServiceProvider
                 ReviewsCloseCommand::class,
                 ReviewsRemindCommand::class,
                 LeastPrivilegeScanCommand::class,
+                PolicyCheckCommand::class,
                 RotateDueSecretsCommand::class,
                 PruneSessionsCommand::class,
                 PruneIdempotencyKeysCommand::class,
@@ -111,7 +114,12 @@ final class IamServiceProvider extends PackageServiceProvider
     public function packageRegistered(): void
     {
         // M2: PDP engine nativo (RBAC+ABAC, deny-overrides) come AuthorizationEngine.
-        $this->app->bind(AuthorizationEngine::class, NativeSqlEngine::class);
+        $this->app->bind(AuthorizationEngine::class, fn ($app): NativeSqlEngine => new NativeSqlEngine(
+            probes: $this->probeRecorder(),
+        ));
+        $this->app->bind(NativeSqlEngine::class, fn ($app): NativeSqlEngine => new NativeSqlEngine(
+            probes: $this->probeRecorder(),
+        ));
 
         // P2 — push webhook degli eventi sigillati. Binding ESPLICITI: il pusher è un parametro
         // nullable-con-default (così `new AuditRecorder(...)` diretto nei test resta valido) e il
@@ -227,6 +235,30 @@ final class IamServiceProvider extends PackageServiceProvider
     }
 
     /** Chiave di cifratura league per auth code/refresh; in prod obbligatoria, in dev derivata da APP_KEY. */
+    /**
+     * Il recorder del corpus, o null quando il campionamento è a zero.
+     *
+     * Null e non "un recorder che non fa niente": così il PDP non paga nemmeno
+     * una chiamata di metodo per una feature che la stragrande maggioranza delle
+     * installazioni tiene spenta.
+     */
+    private function probeRecorder(): ?PolicyProbeRecorder
+    {
+        $configured = config('iam.simulation.probe_sample_rate', 0);
+        $rate = is_numeric($configured) ? (float) $configured : 0.0;
+
+        if ($rate <= 0.0) {
+            return null;
+        }
+
+        $max = config('iam.simulation.max_probes', 5000);
+
+        return new PolicyProbeRecorder(
+            sampleRate: $rate,
+            maxProbes: is_numeric($max) ? (int) $max : 5000,
+        );
+    }
+
     private function makeLogTracer(): LogTracer
     {
         $channel = config('iam.observability.log_channel');
