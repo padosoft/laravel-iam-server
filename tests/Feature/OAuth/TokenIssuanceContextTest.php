@@ -101,3 +101,23 @@ it('reset azzera anche i response params', function () {
 
     expect($ctx->responseParams())->toBe([]);
 });
+
+it('propaga sid nel token, e solo tramite il setter dedicato', function () {
+    $ctx = new TokenIssuanceContext;
+
+    // `sid` resta RESERVED per addClaim(): un modulo qualsiasi non deve poter
+    // dichiarare a quale sessione appartiene un token. Il setter dedicato esiste
+    // per il solo caso in cui la sessione va portata avanti INVARIATA (multi-hop).
+    expect(fn () => $ctx->addClaim('sid', 'sess_iniettata'))
+        ->toThrow(InvalidArgumentException::class);
+
+    $ctx->setSessionId('sess_reale');
+    expect($ctx->apply(['sub' => 'user:1'])['sid'])->toBe('sess_reale');
+
+    // Vuoto ⇒ rifiutato: un `sid` assente e uno vuoto non devono essere la stessa cosa.
+    expect(fn () => $ctx->setSessionId(''))->toThrow(InvalidArgumentException::class);
+
+    // reset() lo azzera come ogni altro pezzo di contesto per-request.
+    $ctx->reset();
+    expect($ctx->apply(['sub' => 'user:1']))->not->toHaveKey('sid');
+});

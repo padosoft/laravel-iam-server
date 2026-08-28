@@ -52,6 +52,8 @@ final class TokenIssuanceContext
 
     private ?string $typ = null;
 
+    private ?string $sessionId = null;
+
     /** @var array<string, mixed> */
     private array $extra = [];
 
@@ -113,6 +115,25 @@ final class TokenIssuanceContext
         $this->extra[$name] = $value;
     }
 
+    /**
+     * Propaga la sessione dell'utente delegante nel token emesso.
+     *
+     * `sid` e' RESERVED e non passa da addClaim() di proposito: un modulo qualsiasi
+     * non deve poter dichiarare a quale sessione appartiene un token. Questo setter
+     * esiste per il solo caso in cui la sessione va PORTATA AVANTI invariata — la
+     * catena di delega multi-hop, dove ogni hop deve poter ri-verificare che la
+     * sessione dell'umano sia ancora viva. Senza, il secondo hop non avrebbe modo di
+     * accorgersi di un logout e la catena perderebbe il gancio di revoca proprio
+     * dove diventa piu' lunga.
+     */
+    public function setSessionId(string $sessionId): void
+    {
+        if ($sessionId === '') {
+            throw new \InvalidArgumentException('`sid` vuoto: non impostabile.');
+        }
+        $this->sessionId = $sessionId;
+    }
+
     public function typ(): ?string
     {
         return $this->typ;
@@ -160,6 +181,9 @@ final class TokenIssuanceContext
         if ($this->audience !== []) {
             $claims['aud'] = $this->audience;
         }
+        if ($this->sessionId !== null) {
+            $claims['sid'] = $this->sessionId;
+        }
         if ($this->act !== null) {
             $claims[self::CLAIM_ACT] = $this->act;
             if ($this->delegationGrantId !== null) {
@@ -176,6 +200,7 @@ final class TokenIssuanceContext
         $this->delegationGrantId = null;
         $this->audience = [];
         $this->typ = null;
+        $this->sessionId = null;
         $this->extra = [];
         $this->responseParams = [];
     }
