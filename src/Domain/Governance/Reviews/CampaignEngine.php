@@ -4,30 +4,39 @@ declare(strict_types=1);
 
 namespace Padosoft\Iam\Domain\Governance\Reviews;
 
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Padosoft\Iam\Domain\Audit\Pii\AuditRecorder;
-use Padosoft\Iam\Domain\Authorization\Models\Grant;
 use Padosoft\Iam\Domain\Governance\Reviews\Models\ReviewCampaign;
 use Padosoft\Iam\Domain\Governance\Reviews\Models\ReviewItem;
+use Padosoft\Iam\Domain\Governance\Reviews\Reviewable\GrantReviewableSource;
+use Padosoft\Iam\Domain\Governance\Reviews\Reviewable\ReviewableRegistry;
+use Padosoft\Iam\Domain\Governance\Reviews\Reviewable\ReviewableSource;
+use Padosoft\Iam\Domain\Governance\Reviews\Reviewable\UnknownReviewableSource;
 
 /**
  * Campaign engine delle Access Review (doc 14 §3). Genera gli item da certificare a partire dallo
  * scope, li arricchisce con i segnali smart (snapshot immutabile), applica le decisioni dei reviewer
  * e, alla chiusura, l'azione on_unconfirmed sui pending. Ogni revoca è tracciata in audit (§invariante
  * #4: ogni mutazione di grant è auditata).
+ *
+ * L'engine NON sa cosa sta certificando: ogni categoria di accesso è una {@see ReviewableSource}
+ * registrata nel {@see ReviewableRegistry}. I grant RBAC/ABAC sono la sorgente built-in; le
+ * delegation grant arrivano da `laravel-iam-agents`. Orchestrare la campagna e conoscere il dominio
+ * di un accesso sono due responsabilità diverse, e tenerle separate è ciò che permette a un modulo
+ * opzionale di entrare nell'IGA senza toccare il core.
  */
 final class CampaignEngine
 {
     public function __construct(
-        private readonly ReviewSignals $signals = new ReviewSignals,
+        private readonly ?ReviewableRegistry $registry = null,
         private readonly ?AuditRecorder $audit = null,
     ) {}
 
     /**
-     * Apre la campagna: genera un ReviewItem per ogni grant ATTIVO nello scope, con snapshot dei
-     * segnali smart. Idempotente sul (campaign, grant): re-aprire non duplica gli item.
+     * Apre la campagna: genera un ReviewItem per ogni accesso ATTIVO nello scope, in ogni sorgente
+     * inclusa, con snapshot dei segnali smart. Idempotente sul (campaign, type, id): re-aprire non
+     * duplica gli item — e aggiunge quelli di una sorgente registrata dopo la prima apertura.
      *
      * @return int numero di item generati in questa apertura
      */
@@ -47,23 +56,27 @@ final class CampaignEngine
             }
 
             $created = 0;
-            foreach ($this->scopedGrants($locked)->cursor() as $grant) {
-                $exists = ReviewItem::query()
-                    ->where('campaign_id', $locked->id)
-                    ->where('grant_id', $grant->id)
-                    ->exists();
-                if ($exists) {
-                    continue;
-                }
+            foreach ($this->sourcesFor($locked) as $source) {
+                foreach ($source->scoped($locked) as $ref) {
+                    $exists = ReviewItem::query()
+                        ->where('campaign_id', $locked->id)
+                        ->where('reviewable_type', $ref->type)
+                        ->where('reviewable_id', $ref->id)
+                        ->exists();
+                    if ($exists) {
+                        continue;
+                    }
 
-                // forceFill: reviewer_subject/signals_json sono uno snapshot non mass-assignable.
-                (new ReviewItem)->forceFill([
-                    'campaign_id' => $locked->id,
-                    'grant_id' => $grant->id,
-                    'reviewer_subject' => $this->resolveReviewer($locked, $grant),
-                    'signals_json' => $this->signals->for($grant),
-                ])->save();
-                $created++;
+                    // forceFill: reviewer_subject/signals_json sono uno snapshot non mass-assignable.
+                    (new ReviewItem)->forceFill([
+                        'campaign_id' => $locked->id,
+                        'reviewable_type' => $ref->type,
+                        'reviewable_id' => $ref->id,
+                        'reviewer_subject' => $ref->reviewer,
+                        'signals_json' => $ref->signals,
+                    ])->save();
+                    $created++;
+                }
             }
 
             // opened_at si valorizza SOLO alla prima apertura: una riapertura non sposta la data d'inizio.
@@ -95,7 +108,7 @@ final class CampaignEngine
             }
 
             if ($decision === 'revoked') {
-                $this->revokeGrant($locked, $decidedBy, $note ?? 'access-review: revoca reviewer');
+                $this->revokeReviewable($locked, $decidedBy, $note ?? 'access-review: revoca reviewer');
             }
 
             $locked->forceFill([
@@ -113,6 +126,9 @@ final class CampaignEngine
      * Chiude la campagna applicando on_unconfirmed ai soli item ancora `pending` (doc 14 §3):
      * `revoke` revoca il grant, `keep` lo conferma (approved), `suspend` — non avendo v1 una
      * sospensione di grant — è trattato fail-closed come revoca (più sicuro che lasciare l'accesso).
+     *
+     * Un item la cui sorgente non è più registrata non è revocabile: resta `pending`, viene
+     * auditato come orfano e NON entra nel conteggio dei processati.
      *
      * @return int numero di item pending processati
      */
@@ -137,31 +153,42 @@ final class CampaignEngine
             foreach ($pending as $item) {
                 // Stessa garanzia di decide(): lock + ricontrollo pending, così un reviewer che decide
                 // mentre la campagna si chiude non viene sovrascritto (no doppia azione sul grant).
-                DB::transaction(function () use ($item, $action): void {
-                    $lockedItem = ReviewItem::query()->whereKey($item->id)->lockForUpdate()->first();
-                    if ($lockedItem === null || $lockedItem->decision !== 'pending') {
-                        return;
-                    }
+                try {
+                    DB::transaction(function () use ($item, $action): void {
+                        $lockedItem = ReviewItem::query()->whereKey($item->id)->lockForUpdate()->first();
+                        if ($lockedItem === null || $lockedItem->decision !== 'pending') {
+                            return;
+                        }
 
-                    if ($action === 'keep') {
-                        $lockedItem->forceFill([
-                            'decision' => 'approved',
-                            'decided_at' => now(),
-                            'decided_by' => 'system:access-review',
-                            'note' => 'on_unconfirmed=keep',
-                        ])->save();
-                    } else {
+                        if ($action === 'keep') {
+                            $lockedItem->forceFill([
+                                'decision' => 'approved',
+                                'decided_at' => now(),
+                                'decided_by' => 'system:access-review',
+                                'note' => 'on_unconfirmed=keep',
+                            ])->save();
+
+                            return;
+                        }
+
                         // revoke | suspend (fail-closed): qualunque azione diversa da keep rimuove l'accesso.
-                        $this->revokeGrant($lockedItem, 'system:access-review', "on_unconfirmed={$action}");
+                        // Se la sorgente non è più registrata, l'accesso NON è revocabile: l'item resta
+                        // pending. Marcarlo `revoked` senza aver revocato nulla falsificherebbe l'evidenza
+                        // — un auditor leggerebbe una revoca che non è mai avvenuta.
+                        $this->revokeReviewable($lockedItem, 'system:access-review', "on_unconfirmed={$action}");
                         $lockedItem->forceFill([
                             'decision' => 'revoked',
                             'decided_at' => now(),
                             'decided_by' => 'system:access-review',
                             'note' => "on_unconfirmed={$action}",
                         ])->save();
-                    }
-                });
-                $processed++;
+                    });
+                    $processed++;
+                } catch (UnknownReviewableSource $e) {
+                    // Un item orfano (modulo che lo aveva creato non più installato) non blocca la
+                    // chiusura degli altri: resta pending, ed è tracciato perché qualcuno lo veda.
+                    $this->recordOrphan($item, $e);
+                }
             }
 
             $locked->forceFill(['status' => 'completed', 'closed_at' => now()])->save();
@@ -209,102 +236,74 @@ final class CampaignEngine
         return $reviewers;
     }
 
-    private function revokeGrant(ReviewItem $item, string $by, string $reason): void
+    /**
+     * Revoca l'accesso certificato, delegando alla sorgente che lo possiede: solo lei conosce
+     * l'invariante del proprio dominio (idempotenza, eventi, `event_type` d'audit).
+     *
+     * @throws UnknownReviewableSource quando il tipo non è (più) registrato
+     */
+    private function revokeReviewable(ReviewItem $item, string $by, string $reason): void
     {
-        $grant = $item->grant()->first();
-        if ($grant === null || $grant->revoked_at !== null) {
-            return; // grant già rimosso/revocato: niente da fare (idempotente)
+        $source = $this->registry()->for($item->reviewable_type);
+        if ($source === null) {
+            throw new UnknownReviewableSource($item->reviewable_type, $item->id);
         }
 
-        $grant->revoke($by);
-
-        ($this->audit ?? app(AuditRecorder::class))->record([
-            'stream' => 'governance',
-            'event_type' => 'iam.grant.revoked',
-            'target_type' => 'grant',
-            'target_id' => $grant->id,
-            'organization_id' => $grant->organization_id,
-            'metadata_json' => [
-                'source' => 'access-review',
-                'campaign_id' => $item->campaign_id,
-                'review_item_id' => $item->id,
-                'reason' => $reason,
-                'revoked_by' => $by,
-            ],
+        $source->revoke($item->reviewable_id, $by, $reason, [
+            'campaign_id' => $item->campaign_id,
+            'review_item_id' => $item->id,
         ]);
     }
 
     /**
-     * Grant attivi che ricadono nello scope della campagna. Filtri additivi e fail-closed:
-     * uno scope vuoto certifica TUTTI i grant attivi (full inventory).
+     * Le sorgenti incluse nella campagna.
      *
-     * @return Builder<Grant>
+     * Default deliberato: **solo i grant**. Uno `scope_json.reviewable_types` assente significa
+     * "come si è sempre comportata questa campagna" — installare un modulo che registra una nuova
+     * sorgente non deve far comparire accessi inattesi dentro campagne già pianificate. Le altre
+     * sorgenti si includono esplicitamente.
+     *
+     * @return list<ReviewableSource>
      */
-    private function scopedGrants(ReviewCampaign $campaign): Builder
+    private function sourcesFor(ReviewCampaign $campaign): array
     {
-        $scope = $campaign->scope_json ?? [];
-        $query = Grant::query()->active();
-
-        // Isolamento cross-tenant (fail-closed): una campagna di un'org certifica SOLO i grant di
-        // quell'org. I grant globali (organization_id null) valgono per tutti i tenant → li può
-        // certificare/revocare unicamente una campagna globale (organization_id null = full inventory),
-        // mai una campagna di un singolo tenant, che altrimenti danneggerebbe gli altri.
-        if ($campaign->organization_id !== null) {
-            $query->where('organization_id', $campaign->organization_id);
-        }
-
-        $apps = $this->stringList($scope['application_keys'] ?? null);
-        if ($apps !== []) {
-            $query->whereIn('application_key', $apps);
-        }
-
-        $types = $this->stringList($scope['privilege_types'] ?? null);
-        if ($types !== []) {
-            $query->whereIn('privilege_type', $types);
-        }
-
-        $subjects = $this->stringList($scope['subject_types'] ?? null);
-        if ($subjects !== []) {
-            $query->whereIn('subject_type', $subjects);
-        }
-
-        if (($scope['only_privileged'] ?? false) === true) {
-            $query->where('is_privileged', true);
-        }
-
-        return $query;
-    }
-
-    private function resolveReviewer(ReviewCampaign $campaign, Grant $grant): ?string
-    {
-        // v1: strategia 'named' → reviewer esplicito nello scope. 'manager'/'resource_owner'
-        // richiedono la directory sync / l'app-owner registry (v2): per ora restano null
-        // (l'item è comunque visibile a un admin con iam:access_review.manage).
-        if ($campaign->reviewer_strategy === 'named') {
-            $named = $campaign->scope_json['reviewer'] ?? null;
-
-            return is_string($named) && $named !== '' ? $named : null;
-        }
-
-        return null;
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function stringList(mixed $value): array
-    {
-        if (!is_array($value)) {
-            return [];
+        $requested = GrantReviewableSource::stringList($campaign->scope_json['reviewable_types'] ?? null);
+        if ($requested === []) {
+            $requested = [GrantReviewableSource::TYPE];
         }
 
         $out = [];
-        foreach ($value as $v) {
-            if (is_string($v) && $v !== '') {
-                $out[] = $v;
+        foreach ($requested as $type) {
+            $source = $this->registry()->for($type);
+            // Un tipo richiesto ma non registrato si ignora in apertura (non c'è inventario da
+            // leggere). Fallire l'apertura dell'intera campagna per un modulo assente sarebbe
+            // peggio: le altre sorgenti resterebbero non certificate.
+            if ($source !== null) {
+                $out[] = $source;
             }
         }
 
         return $out;
+    }
+
+    private function registry(): ReviewableRegistry
+    {
+        return $this->registry ?? app(ReviewableRegistry::class);
+    }
+
+    private function recordOrphan(ReviewItem $item, UnknownReviewableSource $e): void
+    {
+        ($this->audit ?? app(AuditRecorder::class))->record([
+            'stream' => 'governance',
+            'event_type' => 'iam.access_review.item_unrevocable',
+            'target_type' => 'review_item',
+            'target_id' => $item->id,
+            'metadata_json' => [
+                'campaign_id' => $item->campaign_id,
+                'reviewable_type' => $item->reviewable_type,
+                'reviewable_id' => $item->reviewable_id,
+                'reason' => $e->getMessage(),
+            ],
+        ]);
     }
 }

@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Padosoft\Iam\Domain\Audit\Pii\AuditRecorder;
 use Padosoft\Iam\Http\Admin\Support\AdminContext;
 use Padosoft\Iam\Http\Admin\Support\ApiProblemException;
@@ -44,8 +45,11 @@ abstract class AdminController
      *
      * @param  Builder<covariant Model>  $query
      * @param  callable(Model): array<string, mixed>  $map
+     * @param  (callable(Collection<int, Model>): void)|null  $prepare  gira una
+     *                                                                  volta sulla pagina materializzata, prima del map: per risolvere in blocco dati che non
+     *                                                                  stanno nella riga senza pagare una query per riga.
      */
-    protected function paginate(Builder $query, Request $request, callable $map, string $key = 'id'): JsonResponse
+    protected function paginate(Builder $query, Request $request, callable $map, string $key = 'id', ?callable $prepare = null): JsonResponse
     {
         $limit = $this->limit($request);
         $cursor = $request->query('cursor');
@@ -58,6 +62,13 @@ abstract class AdminController
         $query->orderBy($key)->limit($limit + 1);
         $rows = $query->get();
         $hasMore = $rows->count() > $limit;
+
+        // Hook opzionale: gira UNA volta sulla pagina già materializzata, prima del map. Serve a chi
+        // deve risolvere in blocco dati che non stanno nella riga (es. i campi di riepilogo di un
+        // item polimorfico, che vivono in un'altra sorgente) senza pagare una query per riga.
+        if ($prepare !== null) {
+            $prepare($rows);
+        }
 
         $data = [];
         $lastKey = null;

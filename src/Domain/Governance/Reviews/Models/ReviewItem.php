@@ -8,16 +8,21 @@ use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
-use Padosoft\Iam\Domain\Authorization\Models\Grant;
 
 /**
- * Singolo accesso (grant) da certificare in una campagna (doc 14 §3). Porta lo snapshot dei segnali
+ * Singolo accesso da certificare in una campagna (doc 14 §3). Porta lo snapshot dei segnali
  * smart che guidano il reviewer (signals_json) e l'esito (decision). La decisione si scrive solo via
  * CampaignEngine (decided_at/decided_by NON fillable) → storia immutabile e auditabile.
  *
+ * L'oggetto certificato è polimorfico (`reviewable_type` + `reviewable_id`): un grant RBAC/ABAC,
+ * una delegation grant di `laravel-iam-agents`, o qualunque altra sorgente registrata. Non c'è una
+ * relazione Eloquent perché le sorgenti vivono in pacchetti che il core non conosce: si passa dal
+ * ReviewableRegistry.
+ *
  * @property string $id
  * @property string $campaign_id
- * @property string $grant_id
+ * @property string $reviewable_type
+ * @property string $reviewable_id
  * @property string|null $reviewer_subject
  * @property string $decision
  * @property array<string, mixed>|null $signals_json
@@ -39,7 +44,7 @@ final class ReviewItem extends Model
      * @var list<string>
      */
     protected $fillable = [
-        'campaign_id', 'grant_id',
+        'campaign_id', 'reviewable_type', 'reviewable_id',
     ];
 
     /** @var array<string, mixed> */
@@ -56,11 +61,5 @@ final class ReviewItem extends Model
     public function campaign(): BelongsTo
     {
         return $this->belongsTo(ReviewCampaign::class, 'campaign_id');
-    }
-
-    /** @return BelongsTo<Grant, $this> */
-    public function grant(): BelongsTo
-    {
-        return $this->belongsTo(Grant::class, 'grant_id');
     }
 }
