@@ -47,7 +47,13 @@ final class MakeJwkCommand extends Command
             return self::FAILURE;
         }
 
-        $b64u = static fn (string $b): string => rtrim(strtr(base64_encode($b), '+/', '-_'), '=');
+        // RFC 7518 §6.2.1.2: x/y are the FULL field-size octet strings — 32 bytes for P-256,
+        // zero-padded on the left. `openssl_pkey_get_details()` hands back a big-endian integer
+        // with leading zeros stripped, so roughly one coordinate in 256 comes out short and the
+        // JWK we print is invalid: a strict verifier rejects it, and the key registration fails
+        // for reasons nobody can see. `LocalTokenSigner` already pads for the JWKS endpoint
+        // (§ecCoordinate); this command had been missing the same step.
+        $b64u = static fn (string $b): string => rtrim(strtr(base64_encode(str_pad($b, 32, "\x00", STR_PAD_LEFT)), '+/', '-_'), '=');
         $x = $b64u($ec['x']);
         $y = $b64u($ec['y']);
         $kidOpt = $this->option('kid');
