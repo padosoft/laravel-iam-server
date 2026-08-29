@@ -40,7 +40,7 @@ it('open genera un item con segnali smart per ogni grant attivo nello scope', fu
         ->and($c->fresh()->status)->toBe('running')
         ->and(ReviewItem::query()->where('campaign_id', $c->id)->count())->toBe(2);
 
-    $item = ReviewItem::query()->where('grant_id', $g2->id)->first();
+    $item = ReviewItem::query()->where('reviewable_id', $g2->id)->first();
     expect($item->signals_json['never_used'])->toBeTrue()
         ->and($item->signals_json['privileged'])->toBeTrue();
 });
@@ -60,7 +60,7 @@ it('un reviewer che revoca rimuove il grant e audita la mutazione', function () 
     $grant = reviewGrant();
     $c = campaign();
     app(CampaignEngine::class)->open($c);
-    $item = ReviewItem::query()->where('grant_id', $grant->id)->firstOrFail();
+    $item = ReviewItem::query()->where('reviewable_id', $grant->id)->firstOrFail();
 
     app(CampaignEngine::class)->decide($item, 'revoked', 'user:mgr', 'non serve più');
 
@@ -73,7 +73,7 @@ it('approve conferma l\'accesso senza toccare il grant', function () {
     $grant = reviewGrant();
     $c = campaign();
     app(CampaignEngine::class)->open($c);
-    $item = ReviewItem::query()->where('grant_id', $grant->id)->firstOrFail();
+    $item = ReviewItem::query()->where('reviewable_id', $grant->id)->firstOrFail();
 
     app(CampaignEngine::class)->decide($item, 'approved', 'user:mgr');
 
@@ -89,7 +89,7 @@ it('close applica on_unconfirmed=revoke ai soli item pending (auto-revoca)', fun
     $engine->open($c);
 
     // Un reviewer conferma esplicitamente il primo; il secondo resta pending.
-    $keptItem = ReviewItem::query()->where('grant_id', $kept->id)->firstOrFail();
+    $keptItem = ReviewItem::query()->where('reviewable_id', $kept->id)->firstOrFail();
     $engine->decide($keptItem, 'approved', 'user:mgr');
 
     $processed = $engine->close($c);
@@ -108,7 +108,7 @@ it('close con on_unconfirmed=keep conferma i pending senza revocare', function (
 
     $engine->close($c);
 
-    $item = ReviewItem::query()->where('grant_id', $grant->id)->firstOrFail();
+    $item = ReviewItem::query()->where('reviewable_id', $grant->id)->firstOrFail();
     expect($grant->fresh()->revoked_at)->toBeNull()
         ->and($item->decision)->toBe('approved');
 });
@@ -119,7 +119,7 @@ it('decision/decided_by NON sono fillable (storia immutabile)', function () {
     app(CampaignEngine::class)->open($c);
 
     // Tentativo di forzare una decisione via mass-assignment: deve essere ignorato.
-    $item = ReviewItem::query()->where('grant_id', $grant->id)->firstOrFail();
+    $item = ReviewItem::query()->where('reviewable_id', $grant->id)->firstOrFail();
     $item->fill(['decision' => 'approved', 'decided_by' => 'attacker'])->save();
 
     expect($item->fresh()->decision)->toBe('pending')
@@ -150,7 +150,7 @@ it('decide su un item già deciso lancia (no last-write-wins)', function () {
     $grant = reviewGrant();
     $c = campaign();
     app(CampaignEngine::class)->open($c);
-    $item = ReviewItem::query()->where('grant_id', $grant->id)->firstOrFail();
+    $item = ReviewItem::query()->where('reviewable_id', $grant->id)->firstOrFail();
 
     app(CampaignEngine::class)->decide($item, 'approved', 'user:mgr');
 
@@ -200,7 +200,7 @@ it('signals_json è uno snapshot immutabile (non mass-assignable dopo la creazio
     $grant = reviewGrant();
     $c = campaign();
     app(CampaignEngine::class)->open($c);
-    $item = ReviewItem::query()->where('grant_id', $grant->id)->firstOrFail();
+    $item = ReviewItem::query()->where('reviewable_id', $grant->id)->firstOrFail();
 
     $item->fill(['signals_json' => ['tampered' => true]])->save();
 

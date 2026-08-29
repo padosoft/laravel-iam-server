@@ -29,6 +29,26 @@ it('iam:jwk converts an EC P-256 public PEM into a JWK', function () {
         ->and(strlen((string) base64_decode(strtr($jwk['x'], '-_', '+/'), true)))->toBe(32); // 32-byte P-256 coord
 });
 
+it('iam:jwk left-pads a short coordinate to the full 32 bytes (RFC 7518 §6.2.1.2)', function () {
+    // Deterministic regression, on a fixture key whose X really does start with a zero byte.
+    // The random-key test above only catches this about once in 256 runs — which is exactly how
+    // it got shipped: `openssl_pkey_get_details()` strips leading zeros, so the emitted JWK was
+    // 31 bytes and a strict verifier would refuse it, intermittently and unreproducibly.
+    $path = __DIR__.'/../../Fixtures/ec-p256-short-x-public.pem';
+
+    $code = Artisan::call('iam:jwk', ['pem' => $path, '--kid' => 'short-x']);
+    $jwk = json_decode(trim(Artisan::output()), true);
+
+    $x = (string) base64_decode(strtr($jwk['x'], '-_', '+/'), true);
+
+    expect($code)->toBe(0)
+        ->and(strlen($x))->toBe(32)
+        ->and($x[0])->toBe("\x00"); // il byte che OpenSSL aveva tolto
+
+    // La coppia y resta comunque a 32 byte: il padding non deve allungare ciò che è già pieno.
+    expect(strlen((string) base64_decode(strtr($jwk['y'], '-_', '+/'), true)))->toBe(32);
+});
+
 it('iam:jwk fails on a missing file', function () {
     test()->artisan('iam:jwk', ['pem' => 'C:/does/not/exist.pem'])->assertExitCode(1);
 });

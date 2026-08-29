@@ -93,7 +93,8 @@ ask the PDP. You get one place to see and prove every access decision.
   webhooks/outbox, and GDPR crypto-shredding / legal-hold for PII.
 - **Identity governance (IGA)** — access-review campaigns, access-request approval flows, least-privilege
   recommendations, separation-of-duties, anomaly signals — each gated per layer/app/role/user via a feature
-  scope.
+  scope. Campaigns certify **reviewable sources**, not just grants: an optional module registers its own
+  (delegation grants from `laravel-iam-agents` are the first), and a campaign includes them explicitly.
 - **Assurance / step-up** — NIST 800-63B assurance levels; the PDP can require step-up (AAL2) for critical
   actions.
 - **Admin API + panel** — every admin route is documented in `resources/openapi.yaml` (enforced by a test),

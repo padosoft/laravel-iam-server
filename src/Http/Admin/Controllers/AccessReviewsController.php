@@ -7,9 +7,11 @@ namespace Padosoft\Iam\Http\Admin\Controllers;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Padosoft\Iam\Domain\Governance\Reviews\CampaignEngine;
 use Padosoft\Iam\Domain\Governance\Reviews\Models\ReviewCampaign;
 use Padosoft\Iam\Domain\Governance\Reviews\Models\ReviewItem;
+use Padosoft\Iam\Domain\Governance\Reviews\Reviewable\ReviewableRegistry;
 use Padosoft\Iam\Http\Admin\AdminController;
 use Padosoft\Iam\Http\Admin\Support\ApiProblemException;
 
@@ -20,7 +22,10 @@ use Padosoft\Iam\Http\Admin\Support\ApiProblemException;
  */
 final class AccessReviewsController extends AdminController
 {
-    public function __construct(private readonly CampaignEngine $engine) {}
+    public function __construct(
+        private readonly CampaignEngine $engine,
+        private readonly ReviewableRegistry $reviewables,
+    ) {}
 
     public function index(Request $request): JsonResponse
     {
@@ -83,11 +88,24 @@ final class AccessReviewsController extends AdminController
     {
         $model = $this->findCampaign($request, $campaign);
 
+        // L'oggetto certificato è polimorfico: niente eager-load di una relazione Eloquent. I campi
+        // di riepilogo si chiedono alle sorgenti IN BLOCCO sulla pagina già materializzata — una
+        // query per tipo presente nella pagina, non una per item.
+        $descriptions = [];
+
         return $this->paginate(
-            // Eager-load the grant so each item can expose its subject + access (else N+1 / blank fields).
-            ReviewItem::query()->with('grant')->where('campaign_id', $model->id),
+            ReviewItem::query()->where('campaign_id', $model->id),
             $request,
-            fn (Model $i): array => $i instanceof ReviewItem ? $this->itemSummary($i) : [],
+            // Closure (non arrow fn) con `use (&$descriptions)`: una arrow fn catturerebbe l'array
+            // PER VALORE al momento della creazione, cioè ancora vuoto, e ogni item uscirebbe senza
+            // i campi della propria sorgente.
+            function (Model $i) use (&$descriptions): array {
+                return $i instanceof ReviewItem ? $this->itemSummary($i, $descriptions) : [];
+            },
+            'id',
+            function (Collection $rows) use (&$descriptions): void {
+                $descriptions = $this->describeFor($rows->filter(fn (Model $r): bool => $r instanceof ReviewItem)->all());
+            },
         );
     }
 
@@ -117,7 +135,9 @@ final class AccessReviewsController extends AdminController
         $this->runDomain(fn () => $this->engine->decide($model, $decision, $this->context($request)->actorRef(), is_string($note) ? $note : null));
         $this->audit($request, 'iam.access_review.item_decided', 'review_item', $model->id, ['decision' => $decision]);
 
-        return $this->ok($this->itemSummary(($model->fresh() ?? $model)->load('grant')));
+        $fresh = $model->fresh() ?? $model;
+
+        return $this->ok($this->itemSummary($fresh, $this->describeFor([$fresh])));
     }
 
     private function findCampaign(Request $request, string $id): ReviewCampaign
@@ -156,24 +176,47 @@ final class AccessReviewsController extends AdminController
     }
 
     /**
+     * Campi di riepilogo per un insieme di item, una chiamata per sorgente presente.
+     *
+     * @param  iterable<ReviewItem>  $items
+     * @return array<string, array<string, mixed>> "type:id" => campi
+     */
+    private function describeFor(iterable $items): array
+    {
+        $byType = [];
+        foreach ($items as $item) {
+            $byType[$item->reviewable_type][] = $item->reviewable_id;
+        }
+
+        $out = [];
+        foreach ($byType as $type => $ids) {
+            $source = $this->reviewables->for($type);
+            if ($source === null) {
+                continue; // modulo non installato: l'item resta visibile, senza dettagli
+            }
+            foreach ($source->describeMany(array_values(array_unique($ids))) as $id => $fields) {
+                $out[$type.':'.$id] = $fields;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param  array<string, array<string, mixed>>  $descriptions
      * @return array<string, mixed>
      */
-    private function itemSummary(ReviewItem $i): array
+    private function itemSummary(ReviewItem $i, array $descriptions): array
     {
-        // The grant carries WHO (subject_type/subject_id) has WHAT access (privilege_key). Surface it so
-        // the console renders Subject/Access instead of blanks. Eager-loaded by items()/decide().
-        $grant = $i->grant;
+        // La sorgente dice CHI ha CHE COSA: per un grant è subject/privilege, per una delegation
+        // grant è utente/agente/scope. Il console renderizza quello che arriva, senza sapere il tipo.
+        $fields = $descriptions[$i->reviewable_type.':'.$i->reviewable_id] ?? [];
 
         return [
-            'id' => $i->id, 'campaign_id' => $i->campaign_id, 'grant_id' => $i->grant_id,
+            'id' => $i->id, 'campaign_id' => $i->campaign_id,
+            'reviewable_type' => $i->reviewable_type, 'reviewable_id' => $i->reviewable_id,
             'reviewer_subject' => $i->reviewer_subject, 'decision' => $i->decision,
             'signals' => $i->signals_json, 'decided_by' => $i->decided_by,
-            'subject_type' => $grant?->subject_type,
-            'subject_id' => $grant?->subject_id,
-            'privilege_type' => $grant?->privilege_type,
-            'privilege_key' => $grant?->privilege_key,
-            'application_key' => $grant?->application_key,
-            'effect' => $grant?->effect,
-        ];
+        ] + $fields;
     }
 }

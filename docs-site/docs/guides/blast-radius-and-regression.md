@@ -120,11 +120,11 @@ The price, stated plainly:
 - **Inside a caller's transaction** it rolls back to a savepoint: the caller's work
   survives.
 
-<Warning>
+::: callout warning "Zero is not the same as safe" icon:triangle-alert
 A blast radius of zero means **those probes** do not change — not that nothing
 does. The `coverage` block says so in the payload, because "0 changes" read as
 "no risk" is the way this feature would do more harm than good.
-</Warning>
+:::
 
 ### Why its own permission
 

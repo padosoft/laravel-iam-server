@@ -42,6 +42,8 @@ use Padosoft\Iam\Domain\Crypto\LocalKeyProvider;
 use Padosoft\Iam\Domain\Crypto\LocalSecretCipher;
 use Padosoft\Iam\Domain\Governance\GrantUsageRecorder;
 use Padosoft\Iam\Domain\Governance\NativeFeatureScope;
+use Padosoft\Iam\Domain\Governance\Reviews\Reviewable\GrantReviewableSource;
+use Padosoft\Iam\Domain\Governance\Reviews\Reviewable\ReviewableRegistry;
 use Padosoft\Iam\Domain\Identity\Assurance\NativeAssuranceProvider;
 use Padosoft\Iam\Domain\Identity\Assurance\NativeStepUpProvider;
 use Padosoft\Iam\Domain\Identity\Assurance\UnconfiguredFactorVerifier;
@@ -192,6 +194,16 @@ final class IamServiceProvider extends PackageServiceProvider
         // TokenIssuanceContext: canale request-scoped per claim/header aggiuntivi del token in
         // emissione (delega RFC 8693, modulo -agents). Singleton condiviso tra il signer, il
         // claims builder e il TokenController (che lo resetta a ogni richiesta token).
+        // IGA — registro delle sorgenti certificabili nelle access review. Singleton perché i
+        // moduli opzionali vi si registrano dal proprio service provider; i grant RBAC/ABAC sono
+        // la sorgente built-in e restano l'unica inclusa per default (vedi CampaignEngine::sourcesFor).
+        $this->app->singleton(ReviewableRegistry::class, function (Container $app): ReviewableRegistry {
+            $registry = new ReviewableRegistry;
+            $registry->register(new GrantReviewableSource(audit: $app->make(AuditRecorder::class)));
+
+            return $registry;
+        });
+
         $this->app->singleton(TokenIssuanceContext::class);
 
         // M4: firma JWT (TokenSigner ES256).
